@@ -11,7 +11,7 @@ from PyQt5.QtWidgets import (QApplication, QWidget,QComboBox, QWidgetAction, QPu
 from PyQt5.QtCore import QTimer, QProcess, Qt, QDir, QFileInfo, QProcessEnvironment
 from PyQt5.QtGui import QStandardItemModel, QStandardItem, QIcon
 from PyQt5 import QtCore
-import signal # Added import
+import signal 
 
 from rate_calculator import calculate_increase_rate
 from syntax_highlighter import OpenFOAMHighlighter
@@ -1053,23 +1053,23 @@ class OpenFOAMInterface(QWidget):
         """
         Analisa a saída do terminal para capturar resíduos e tempos.
         """
+
         # Captura dados de profiling e envia para o painel dedicado
         if "ExecutionTime" in line or "ClockTime" in line:
             self.profilingLogs.append(line)
-        
-        # Captura informações de timing específicas do solver
-        if ("smoothSolver:" in line and "Solving for" in line) or ("GAMG:" in line and "Solving for" in line):
-            if "Final residual" in line and "No Iterations" in line:
-                # Extrai informações de performance
-                parts = line.split(',')
-                if len(parts) >= 3:
-                    iterations_part = parts[2].strip()
-                    if "No Iterations" in iterations_part:
-                        iter_count = iterations_part.split()[-1]
-                        solver_info = f"Solver performance: {iter_count} iterations"
-                        self.profilingLogs.append(solver_info)
-        
-        current_time_match = re.search(r'Time = ([0-9.e+-]+)', line)
+
+        # Captura informações de performance (número de iterações)
+        if ("Solving for" in line) and ("Final residual" in line) and ("No Iterations" in line):
+            parts = line.split(',')
+            if len(parts) >= 3:
+                iterations_part = parts[2].strip()
+                if "No Iterations" in iterations_part:
+                    iter_count = iterations_part.split()[-1]
+                    solver_info = f"Solver performance: {iter_count} iterations"
+                    self.profilingLogs.append(solver_info)
+
+        # Captura o tempo atual (Time = x)
+        current_time_match = re.search(r'Time = ([0-9.eE+-]+)', line)
         if current_time_match:
             current_time = float(current_time_match.group(1))
             if current_time not in self.timeData:
@@ -1077,10 +1077,15 @@ class OpenFOAMInterface(QWidget):
                 if len(self.maxCloudAlphaData) < len(self.timeData):
                     self.maxCloudAlphaData.append(None)
 
-        residual_match = re.search(r'smoothSolver:  Solving for ([a-zA-Z0-9_.]+), Initial residual = ([0-9.e+-]+)', line)
+        # Captura resíduos de qualquer solver (ex: DILUPBiCGStab, GAMG, DICPBiCGStab, etc.)
+        residual_match = re.search(
+            r'([A-Z]+[a-zA-Z]*)[:]*\s+Solving for ([a-zA-Z0-9_.]+), Initial residual = ([0-9.eE+-]+)',
+            line
+        )
         if residual_match:
-            variable = residual_match.group(1)
-            residual = float(residual_match.group(2))
+            solver_name = residual_match.group(1)
+            variable = residual_match.group(2)
+            residual = float(residual_match.group(3))
 
             if variable not in self.residualData:
                 self.residualData[variable] = []
@@ -1094,25 +1099,20 @@ class OpenFOAMInterface(QWidget):
                 self.residualData[variable].append(None)
 
             self.residualData[variable].append(residual)
-
             self.updateResidualPlot(variable)
 
         # Captura max(cloud:alpha)
         max_alpha_match = re.search(r'Max cell volume fraction\s*=\s*([0-9.eE+-]+)', line)
         if max_alpha_match:
             value = float(max_alpha_match.group(1))
-            # Garante que o valor seja associado ao último tempo lido
             if self.timeData:
-                # Sincroniza: se já existe valor para este tempo, substitui; senão, adiciona
                 if len(self.maxCloudAlphaData) == len(self.timeData):
                     self.maxCloudAlphaData[-1] = value
                 elif len(self.maxCloudAlphaData) < len(self.timeData):
-                    # Preenche com None se necessário
                     while len(self.maxCloudAlphaData) < len(self.timeData) - 1:
                         self.maxCloudAlphaData.append(None)
                     self.maxCloudAlphaData.append(value)
                 else:
-                    # Caso raro: mais maxCloudAlpha do que timeData
                     self.maxCloudAlphaData = self.maxCloudAlphaData[:len(self.timeData)-1] + [value]
                 self.updateMaxCloudAlphaPlot()
 
