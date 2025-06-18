@@ -43,9 +43,10 @@ Se quiser rodar o programa de qualquer lugar do terminal, faça:
 echo '#!/bin/bash
 export LD_LIBRARY_PATH=""
 source /CAMINHO/ABSOLUTO/DA/PASTA/.venv/bin/activate
-python3 /CAMINHO/ABSOLUTO/DA/PASTA/main.py' | sudo tee /usr/local/bin/gafoam > /dev/null
+python3 /CAMINHO/ABSOLUTO/DA/PASTA/main.py' | sudo tee /usr/local/bin/gafoam-multiphaseEuler > /dev/null
 
-sudo chmod +x /usr/local/bin/gafoam
+sudo chmod +x /usr/local/bin/gafoam-multiphaseEuler
+
 ```
 **Substitua `/CAMINHO/ABSOLUTO/DA/PASTA` pelo caminho completo da pasta do projeto.**
 
