@@ -1,1 +1,69 @@
-# GAFoam---multiphaseSolver
+# GAFoamincompressibleDenseParticleFluid
+
+Interface gráfica para OpenFOAM utilizando Python e PyQt5.
+
+---
+
+## Instalação e Execução
+
+### 1. Clone o repositório
+
+```bash
+git clone https://github.com/devlucascfarias/GAFoam---multiphaseSolver.git
+cd GAFoam---multiphaseSolver
+```
+
+### 2. Crie e ative um ambiente virtual
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+```
+
+### 3. Instale as dependências
+
+```bash
+pip install -r requirements.txt
+```
+
+### 4. Execute o programa
+
+```bash
+LD_LIBRARY_PATH="" python main.py
+
+```
+
+---
+
+## (Opcional) Criando um comando global `gafoam`
+
+Se quiser rodar o programa de qualquer lugar do terminal, faça:
+
+```bash
+echo '#!/bin/bash
+export LD_LIBRARY_PATH=""
+source /CAMINHO/ABSOLUTO/DA/PASTA/.venv/bin/activate
+python3 /CAMINHO/ABSOLUTO/DA/PASTA/main.py' | sudo tee /usr/local/bin/gafoam-multiphaseEuler > /dev/null
+
+sudo chmod +x /usr/local/bin/gafoam-multiphaseEuler
+
+```
+**Substitua `/CAMINHO/ABSOLUTO/DA/PASTA` pelo caminho completo da pasta do projeto.**
+
+Agora basta digitar:
+```bash
+gafoam
+```
+
+---
+
+## Observações
+
+- Certifique-se de que o OpenFOAM esteja instalado e configurado no seu sistema, se necessário.
+- Se aparecer erro relacionado ao Qt, instale a dependência do sistema:
+  ```bash
+  sudo apt install libxcb-xinerama0
+  ```
+- Para dúvidas, abra uma issue no repositório.
+
+---
