@@ -4,6 +4,15 @@ Interface gráfica para OpenFOAM utilizando Python e PyQt5.
 
 ---
 
+## Instalação simples
+
+```bash
+
+git clone https://github.com/devlucascfarias/GAFoam---multiphaseSolver.git && cd GAFoam---multiphaseSolver && python3 -m venv .venv && source .venv/bin/activate && pip install -r requirements.txt && echo '#!/bin/bash\nexport LD_LIBRARY_PATH=""\nsource /CAMINHO/REAL/DO/PROJETO/.venv/bin/activate\npython3 /CAMINHO/REAL/DO/PROJETO/main.py "$@"' | sudo tee /usr/local/bin/gafoam-multiphaseEuler > /dev/null && sudo chmod +x /usr/local/bin/gafoam-multiphaseEuler
+
+```
+
+
 ## Instalação e Execução
 
 ### 1. Clone o repositório
