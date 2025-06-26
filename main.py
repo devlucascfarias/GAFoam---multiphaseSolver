@@ -29,29 +29,38 @@ class OpenFOAMInterface(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         
+        # Configuração da janela principal
         self.setWindowTitle("GAFoam — multiphaseEuler")
         self.resize(1000, 600)
         
+        # Carregamento de configurações
         self.config_file = "config.json"
         self.config = self.load_config()
         
+        # Inicialização de variáveis de caminho
         self.init_paths()
         
+        # Inicialização de dados para o gráfico de resíduos
         self.init_residual_data()
         
+        # Configuração do layout principal
         self.mainVerticalLayout = QVBoxLayout(self)
         self.mainVerticalLayout.setContentsMargins(5, 5, 5, 5)
         
+        # Aplicar folha de estilo global
         self.apply_stylesheet()
         
+        # Configuração da interface
         self.setupMenuBar()
         self.setupMainContentArea()
         self.setupStatusBar()
         
+        # Timer para monitoramento do sistema
         self.systemMonitorTimer = QTimer(self)
         self.systemMonitorTimer.timeout.connect(self.updateSystemUsage)
         self.systemMonitorTimer.start(2000)
         
+        # Configuração final do layout
         self.setLayout(self.mainVerticalLayout)
         
         self.simulationHistory = SimulationHistory()
@@ -81,7 +90,6 @@ class OpenFOAMInterface(QWidget):
     
     def apply_stylesheet(self):
         """Aplica o estilo global da aplicação."""
-        # Definição do estilo integrado no código
         self.setStyleSheet("""
             /* Estilo geral */
             QWidget {
@@ -295,14 +303,13 @@ class OpenFOAMInterface(QWidget):
             required_dirs = ["0", "system", "constant"]
             if all(QDir(casePath).exists(dir_name) for dir_name in required_dirs):
                 self.unvFilePath = casePath  
-                self.baseDir = casePath  # Adiciona esta linha para sincronizar baseDir
+                self.baseDir = casePath  
                 self.systemDir = os.path.join(self.baseDir, "system")
                 self.config["baseDir"] = self.baseDir
                 self.save_config()
                 self.outputArea.append(f"Case folder selected: {casePath}")
                 self.meshPathLabel.setText(f"Mesh: {QFileInfo(casePath).fileName()}")
                 self.outputArea.append("Case loaded successfully.")
-                # self.populateTreeView(casePath)  
             else:
                 self.outputArea.append("Error: The selected folder does not contain the required directories (0, system, constant).")
         else:
@@ -312,7 +319,6 @@ class OpenFOAMInterface(QWidget):
         """Configura a barra de menu com design moderno."""
         self.menuBar = QMenuBar(self)
         
-        # Aplica estilo adicional específico para o menu superior
         self.menuBar.setStyleSheet("""
             QMenuBar {
                 background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
@@ -370,10 +376,8 @@ class OpenFOAMInterface(QWidget):
             }
         """)
         
-        # Menu Arquivo
         fileMenu = QMenu("Arquivo", self.menuBar)
         
-        # Ações do menu arquivo
         importUNVAction = QAction(QIcon.fromTheme("document-open", QIcon()), "Carregar Arquivo .unv", self)
         importUNVAction.triggered.connect(self.chooseUNV)
         
@@ -387,7 +391,6 @@ class OpenFOAMInterface(QWidget):
         fileMenu.addAction(importCaseAction)
         fileMenu.addAction(setBaseDirAction)
         
-        # Menu Terminal
         terminalMenu = QMenu("Terminal", self.menuBar)
         
         clearTerminalAction = QAction(QIcon.fromTheme("edit-clear", QIcon()), "Limpar Terminal", self)
@@ -395,10 +398,8 @@ class OpenFOAMInterface(QWidget):
         
         terminalMenu.addAction(clearTerminalAction)
         
-        # Menu OpenFOAM
         openfoamMenu = QMenu("OpenFOAM", self.menuBar)
         
-        # ComboBox de versões do OpenFOAM
         self.versionComboBox = QComboBox(self)
         self.versionComboBox.addItems(self.detectOpenFOAMVersions())
         self.versionComboBox.setCurrentText(self.currentOpenFOAMVersion)
@@ -408,7 +409,6 @@ class OpenFOAMInterface(QWidget):
         versionAction.setDefaultWidget(self.versionComboBox)
         openfoamMenu.addAction(versionAction)
         
-        # Menu Histórico
         historyMenu = QMenu("Histórico", self.menuBar)
         
         viewHistoryAction = QAction(QIcon.fromTheme("document-properties", QIcon()), "Ver Histórico de Simulação", self)
@@ -416,7 +416,6 @@ class OpenFOAMInterface(QWidget):
         
         historyMenu.addAction(viewHistoryAction)
         
-        # Adicionar menus à barra
         self.menuBar.addMenu(fileMenu)
         self.menuBar.addMenu(terminalMenu)
         self.menuBar.addMenu(openfoamMenu)
@@ -433,6 +432,7 @@ class OpenFOAMInterface(QWidget):
         contentLayout = QHBoxLayout()
         
         # === PAINEL LATERAL (ESQUERDO) ===
+
         leftPanel = QWidget()
         leftPanel.setObjectName("leftPanel")
         leftPanel.setStyleSheet("""
@@ -478,12 +478,10 @@ class OpenFOAMInterface(QWidget):
         leftControlLayout.setContentsMargins(10, 15, 10, 15)
         leftControlLayout.setSpacing(10)
         
-        # Título do painel de controle
         controlLabel = QLabel("Simulation Control", leftPanel)
         controlLabel.setProperty("sectionTitle", "true")
         leftControlLayout.addWidget(controlLabel)
         
-        # Botões de controle de simulação
         buttonStyle = """
             QPushButton {
                 background-color: #3a7ca5;
@@ -503,7 +501,6 @@ class OpenFOAMInterface(QWidget):
             }
         """
         
-        # Botões principais com ícones
         self.convertButton = QPushButton("convertMesh", leftPanel)
         self.convertButton.setStyleSheet(buttonStyle)
         self.convertButton.clicked.connect(self.convertMesh)
@@ -544,14 +541,15 @@ class OpenFOAMInterface(QWidget):
         self.logButton.clicked.connect(self.showSimulationLogs)
         leftControlLayout.addWidget(self.logButton)
         
-        # Espaço em branco no final
         leftControlLayout.addStretch()
         
         # === ÁREA PRINCIPAL (DIREITA) ===
+
         rightContentLayout = QVBoxLayout()
         rightContentLayout.setSpacing(10)
         
         # === CONTROLES DE SIMULAÇÃO ===
+
         controlPanel = QWidget()
         controlPanel.setObjectName("controlPanel")
         controlPanel.setStyleSheet("""
@@ -572,7 +570,6 @@ class OpenFOAMInterface(QWidget):
         controlPanelLayout.setContentsMargins(10, 10, 10, 10)
         controlPanelLayout.setSpacing(10)
         
-        # Botões utilitários
         utilButtonStyle = """
             QPushButton {
                 background-color: #3a7ca5;
@@ -619,7 +616,6 @@ class OpenFOAMInterface(QWidget):
         controlPanelLayout.addWidget(self.restartButton)
         controlPanelLayout.addWidget(self.stopButton)
         
-        # Botões utilitários
         utilButtonStyle = """
             QPushButton {
                 background-color: #3a7ca5;
@@ -657,6 +653,7 @@ class OpenFOAMInterface(QWidget):
         rightContentLayout.addWidget(controlPanel)
         
         # === ÁREA DO TERMINAL ===
+
         terminalLayout = QVBoxLayout()
 
         
@@ -697,9 +694,8 @@ class OpenFOAMInterface(QWidget):
         """)
         terminalLayout.addWidget(self.outputArea)
         
-        # Campo de entrada de comandos
         self.terminalInput = QLineEdit(self)
-        self.terminalInput.setPlaceholderText(">> Digite um comando e pressione Enter")
+        self.terminalInput.setPlaceholderText(">> Terminal")
         self.terminalInput.setStyleSheet("""
             QLineEdit {
                 background-color: #2c3e50;
@@ -722,14 +718,19 @@ class OpenFOAMInterface(QWidget):
         rightContentLayout.addLayout(terminalLayout)
         
         # === ÁREA DE VISUALIZAÇÃO ===
+
         visualizationLayout = QHBoxLayout()
         
         # === GRÁFICO DE RESÍDUOS ===
+
         residualLayout = QVBoxLayout()
-        
-        plot_title = QLabel("Gráfico de Resíduos", self)
-        plot_title.setProperty("sectionTitle", "true")
-        plot_title.setStyleSheet("""
+
+        # Adiciona variáveis para exibir deltaT e Time
+        self.currentDeltaT = None
+        self.currentTime = None
+        self.plot_title = QLabel("Gráfico de Resíduos | deltaT: --  Time: --", self)
+        self.plot_title.setProperty("sectionTitle", "true")
+        self.plot_title.setStyleSheet("""
             QLabel {
                 background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
                               stop:0 #2c3e50, stop:1 #3498db);
@@ -742,9 +743,8 @@ class OpenFOAMInterface(QWidget):
                 margin-bottom: 5px;
             }
         """)
-        residualLayout.addWidget(plot_title)
+        residualLayout.addWidget(self.plot_title)
         
-        # Configuração do gráfico
         self.graphWidget = pg.PlotWidget()
         self.graphWidget.setBackground('#1a1a2e')
         self.graphWidget.setLabel('left', 'Resíduos', color='#ecf0f1')
@@ -753,7 +753,6 @@ class OpenFOAMInterface(QWidget):
         self.graphWidget.showGrid(x=True, y=True, alpha=0.3)
         self.graphWidget.addLegend(brush='#2c3e50', pen='#3498db', labelTextColor='#ecf0f1')
         
-        # Configurações de estilo adicional para o gráfico
         plotStyle = """
             color: #ecf0f1;
             background-color: #1a1a2e;
@@ -764,7 +763,6 @@ class OpenFOAMInterface(QWidget):
         """
         residualLayout.addWidget(self.graphWidget)
         
-        # Controles do gráfico
         graphControlLayout = QHBoxLayout()
         
         controlButtonStyle = """
@@ -795,26 +793,19 @@ class OpenFOAMInterface(QWidget):
         self.clearPlotButton.setStyleSheet(controlButtonStyle)
         self.clearPlotButton.clicked.connect(self.clearResidualPlot)
         
-        self.toggleScaleButton = QPushButton("Alternar Escala", self)
-        self.toggleScaleButton.setStyleSheet(controlButtonStyle)
-        self.toggleScaleButton.clicked.connect(self.toggleLogScale)
-        
         self.exportPlotDataButton = QPushButton("Exportar Dados", self)
         self.exportPlotDataButton.setStyleSheet(controlButtonStyle)
         self.exportPlotDataButton.clicked.connect(self.exportPlotData)
         
         graphControlLayout.addWidget(self.clearPlotButton)
-        graphControlLayout.addWidget(self.toggleScaleButton)
         graphControlLayout.addWidget(self.exportPlotDataButton)
         
         residualLayout.addLayout(graphControlLayout)
         
-        # Adicionar painéis ao layout de visualização
-        visualizationLayout.addLayout(residualLayout, 1)  # Toda a largura para o gráfico
+        visualizationLayout.addLayout(residualLayout, 1) 
         
         rightContentLayout.addLayout(visualizationLayout)
         
-        # Adicionar os painéis principal e lateral ao layout do conteúdo
         contentLayout.addWidget(leftPanel)
         contentLayout.addLayout(rightContentLayout, 1)
         
@@ -874,7 +865,6 @@ class OpenFOAMInterface(QWidget):
         """Configura a barra de status com design moderno."""
         self.statusBar = QStatusBar(self)
         
-        # Estilo para os labels da barra de status
         labelStyle = """
             QLabel {
                 background-color: transparent;
@@ -885,23 +875,18 @@ class OpenFOAMInterface(QWidget):
             }
         """
         
-        # Informações do mesh
         self.meshPathLabel = QLabel("Malha: Nenhuma", self.statusBar)
         self.meshPathLabel.setStyleSheet(labelStyle)
         
-        # Solver atual
         self.solverLabel = QLabel(f"Solver: {self.currentSolver}", self.statusBar)
         self.solverLabel.setStyleSheet(labelStyle)
         
-        # Uso da CPU
         self.cpuUsageLabel = QLabel("CPU: --%", self.statusBar)
         self.cpuUsageLabel.setStyleSheet(labelStyle)
         
-        # Uso de memória
         self.memUsageLabel = QLabel("Memória: --%", self.statusBar)
         self.memUsageLabel.setStyleSheet(labelStyle)
         
-        # Adiciona os widgets à barra de status
         self.statusBar.addPermanentWidget(self.solverLabel, 1)
         self.statusBar.addPermanentWidget(self.meshPathLabel, 1)
         self.statusBar.addPermanentWidget(self.cpuUsageLabel)
@@ -955,7 +940,6 @@ class OpenFOAMInterface(QWidget):
             return
         foam_file = os.path.join(self.baseDir, "foam.foam")
         if not os.path.exists(foam_file):
-            # Cria o arquivo vazio se não existir
             with open(foam_file, "w") as f:
                 pass
             self.outputArea.append(f"Arquivo {foam_file} criado automaticamente.")
@@ -1005,11 +989,39 @@ class OpenFOAMInterface(QWidget):
         Analisa a saída do terminal para capturar resíduos e tempos.
         """
 
-        # Captura dados de profiling e envia para o painel dedicado
         if "ExecutionTime" in line or "ClockTime" in line:
             self.profilingLogs.append(line)
 
-        # Captura informações de performance (número de iterações)
+        # Captura o valor de 'Time'
+        if line.startswith("Time ="):
+            try:
+                time_str = line.split('=')[1].strip()
+                # Remove 's' suffix if present for numeric conversion
+                numeric_part = time_str.rstrip('s')
+                time_value = float(numeric_part)
+                # Store the original string with suffix
+                self.currentTime = time_str
+                # Use numeric value for data points
+                if not self.timeData or self.timeData[-1] != time_value:
+                    self.timeData.append(time_value)
+            except (ValueError, IndexError):
+                pass  # Ignora erros de conversão
+
+        # Captura o valor de 'deltaT'
+        deltaT_match = re.search(r"deltaT = ([\d.eE+-]+)", line)
+        if deltaT_match:
+            try:
+                self.currentDeltaT = float(deltaT_match.group(1))
+            except ValueError:
+                pass # Ignora erros de conversão
+
+        # Atualiza o título do gráfico
+        if hasattr(self, 'plot_title'):
+             deltaT_text = f"{self.currentDeltaT}" if self.currentDeltaT is not None else "--"
+             time_text = f"{self.currentTime}" if self.currentTime is not None else "--"
+             self.plot_title.setText(f"Gráfico de Resíduos | deltaT: {deltaT_text} | Time: {time_text}")
+
+
         if ("Solving for" in line) and ("Final residual" in line) and ("No Iterations" in line):
             parts = line.split(',')
             if len(parts) >= 3:
@@ -1019,18 +1031,21 @@ class OpenFOAMInterface(QWidget):
                     solver_info = f"Solver performance: {iter_count} iterations"
                     self.profilingLogs.append(solver_info)
 
-        # Captura o tempo atual (Time = x)
-        current_time_match = re.search(r'Time = ([0-9.eE+-]+)', line)
+        current_time_match = re.search(r'Time = ([0-9.eE+-]+s?)', line)
         if current_time_match:
-            current_time = float(current_time_match.group(1))
+            time_str = current_time_match.group(1)
+            numeric_part = time_str.rstrip('s')
+            current_time = float(numeric_part)
+            # Update the current time display string
+            self.currentTime = time_str
             if current_time not in self.timeData:
                 self.timeData.append(current_time)
                 if len(self.maxCloudAlphaData) < len(self.timeData):
                     self.maxCloudAlphaData.append(None)
 
-        # Captura resíduos de qualquer solver (ex: DILUPBiCGStab, GAMG, DICPBiCGStab, etc.)
+        # Captura todas as variáveis, incluindo aquelas com caracteres especiais como p_rgh e alpha.particles
         residual_match = re.search(
-            r'([A-Z]+[a-zA-Z]*)[:]*\s+Solving for ([a-zA-Z0-9_.]+), Initial residual = ([0-9.eE+-]+)',
+            r'([A-Z]+[a-zA-Z]*)[:]*\s+Solving for ([a-zA-Z0-9_.:]+), Initial residual = ([0-9.eE+-]+)',
             line
         )
         if residual_match:
@@ -1038,6 +1053,7 @@ class OpenFOAMInterface(QWidget):
             variable = residual_match.group(2)
             residual = float(residual_match.group(3))
 
+            # Adiciona a variável no gráfico de resíduos
             if variable not in self.residualData:
                 self.residualData[variable] = []
                 color_idx = len(self.residualData) % len(self.colors)
@@ -1046,14 +1062,18 @@ class OpenFOAMInterface(QWidget):
                     [], [], name=variable, pen=pen
                 )
 
+            # Garante que o array de resíduos esteja com o tamanho correto
             while len(self.residualData[variable]) < len(self.timeData) - 1:
                 self.residualData[variable].append(None)
 
             self.residualData[variable].append(residual)
             self.updateResidualPlot(variable)
 
-        # Captura max(cloud:alpha)
-        max_alpha_match = re.search(r'Max cell volume fraction\s*=\s*([0-9.eE+-]+)', line)
+        # Captura o valor máximo da fração de volume (cloud:alpha)
+        max_alpha_match = re.search(r'particles fraction, min, max = .+ ([0-9.eE+-]+)', line)
+        if not max_alpha_match:
+            max_alpha_match = re.search(r'Max cell volume fraction\s*=\s*([0-9.eE+-]+)', line)
+            
         if max_alpha_match:
             value = float(max_alpha_match.group(1))
             if self.timeData:
@@ -1079,11 +1099,9 @@ class OpenFOAMInterface(QWidget):
                 self.residualLines[variable].setData(filtered_time_data, filtered_residual_data)
 
     def updateMaxCloudAlphaPlot(self):
-        # Cria a linha se não existir
         if self.maxCloudAlphaLine is None:
             pen = pg.mkPen(color='r', width=2, style=Qt.DashLine)
             self.maxCloudAlphaLine = self.graphWidget.plot([], [], name='max(cloud:alpha)', pen=pen)
-        # Plota apenas os pontos válidos
         times = [t for t, v in zip(self.timeData, self.maxCloudAlphaData) if v is not None]
         values = [v for v in self.maxCloudAlphaData if v is not None]
         self.maxCloudAlphaLine.setData(times, values)
@@ -1330,7 +1348,6 @@ class OpenFOAMInterface(QWidget):
                 try:
                     import psutil
                     parent = psutil.Process(pid)
-                    # Pausa todos os filhos recursivamente
                     for child in parent.children(recursive=True):
                         child.suspend()
                     parent.suspend()
@@ -1350,7 +1367,6 @@ class OpenFOAMInterface(QWidget):
                 try:
                     import psutil
                     parent = psutil.Process(pid)
-                    # Retoma todos os filhos recursivamente
                     for child in parent.children(recursive=True):
                         child.resume()
                     parent.resume()
@@ -1364,20 +1380,12 @@ class OpenFOAMInterface(QWidget):
 
     def restartSimulation(self):
         """Reinicia a simulação."""
-        # First, stop any existing simulation
         if self.currentProcess and self.currentProcess.state() == QProcess.Running:
-            self.stopSimulation() # Ensure it's fully stopped
-            # Wait a bit for the process to terminate if stopSimulation is asynchronous in effect
-            # Or ensure stopSimulation is blocking or provides a callback/signal
-            # For simplicity here, we assume stopSimulation effectively stops it before proceeding.
+            self.stopSimulation() 
 
-        # Clear necessary previous run data, e.g., processor directories, logs if needed
-        # self.clearDecomposedProcessors() # Example, if you always want to clear these
-        # self.clearOldProcessorDirs() # As per your existing method
 
         self.outputArea.append("Reiniciando a simulação...")
-        # Re-run the simulation. This might be similar to runSimulation or a specific restart logic
-        self.runSimulation() # Assuming runSimulation can handle starting fresh or from where it should
+        self.runSimulation() 
 
     def clearDecomposedProcessors(self):
         if not self.baseDir: 
@@ -1440,78 +1448,6 @@ class OpenFOAMInterface(QWidget):
     def clearTerminal(self):
         self.outputArea.clear()
         self.outputArea.append("Terminal limpo.", 2000)
-
-    def enableProfiling(self):
-        import os
-        # Verifica se o diretório base está selecionado e é válido
-        if not self.baseDir or not os.path.isdir(self.baseDir):
-            self.outputArea.append("Erro: Nenhum diretório base selecionado.")
-            return
-        required_dirs = ["0", "constant", "system"]
-        if not all(os.path.isdir(os.path.join(self.baseDir, d)) for d in required_dirs):
-            self.outputArea.append("Erro: O diretório base selecionado não contém as pastas 0, constant e system.")
-            return
-        controlDict_path = os.path.join(self.baseDir, "system", "controlDict")
-        if not os.path.exists(controlDict_path):
-            self.outputArea.append(f"Erro: controlDict não encontrado em {controlDict_path}.")
-            return
-        try:
-            with open(controlDict_path, "r") as f:
-                lines = f.readlines()
-            
-            # Remove blocos InfoSwitches e DebugSwitches existentes, se houver
-            new_lines = []
-            inside_info = False
-            inside_debug = False
-            
-            for line in lines:
-                if 'InfoSwitches' in line:
-                    inside_info = True
-                    continue
-                elif 'DebugSwitches' in line:
-                    inside_debug = True
-                    continue
-                
-                if inside_info or inside_debug:
-                    if '}' in line:
-                        inside_info = False
-                        inside_debug = False
-                    continue
-                
-                new_lines.append(line)
-            
-            # Adiciona blocos InfoSwitches e DebugSwitches antes do final do arquivo
-            insert_idx = len(new_lines)
-            for i, line in enumerate(reversed(new_lines)):
-                if '*****' in line:
-                    insert_idx = len(new_lines) - i - 1
-                    break
-            
-            # Adiciona InfoSwitches
-            new_lines.insert(insert_idx, 'InfoSwitches\n')
-            new_lines.insert(insert_idx+1, '{\n')
-            new_lines.insert(insert_idx+2, '    time 1;\n')
-            new_lines.insert(insert_idx+3, '}\n')
-            new_lines.insert(insert_idx+4, '\n')
-            
-            # Adiciona DebugSwitches
-            new_lines.insert(insert_idx+5, 'DebugSwitches\n')
-            new_lines.insert(insert_idx+6, '{\n')
-            new_lines.insert(insert_idx+7, '    // 0 = off, 1 = on\n')
-            new_lines.insert(insert_idx+8, '    InfoSwitch          1;\n')
-            new_lines.insert(insert_idx+9, '    TimeRegistry        1;  // Esta é a chave! Garante profiling detalhado.\n')
-            new_lines.insert(insert_idx+10, '}\n')
-            
-            with open(controlDict_path, "w") as f:
-                f.writelines(new_lines)
-            
-            self.outputArea.append("Profiling completo ativado no controlDict!")
-            self.outputArea.append("- InfoSwitches { time 1; } adicionado")
-            self.outputArea.append("- DebugSwitches { TimeRegistry 1; } adicionado")
-            self.profilingLogs.append("Profiling detalhado ativado - TimeRegistry habilitado!")
-            
-        except Exception as e:
-            self.outputArea.append(f"Erro ao ativar profiling: {e}")
     
     def editFile(self):
         """Abre um arquivo para edição no editor."""
@@ -1617,7 +1553,6 @@ class OpenFOAMInterface(QWidget):
 
         layout = QVBoxLayout(dialog)
 
-        # Styling for labels in dialog
         label_style = """
             QLabel {
                 color: #ecf0f1;
@@ -1627,7 +1562,6 @@ class OpenFOAMInterface(QWidget):
             }
         """
         
-        # Styling for input fields in dialog
         input_style = """
             QLineEdit {
                 background-color: #34495e;
@@ -1835,7 +1769,6 @@ class OpenFOAMInterface(QWidget):
         layout.addWidget(self.historyTable)
 
         buttonLayout = QHBoxLayout()
-        # Styled buttons for dialog
         button_style = """
             QPushButton {
                 background-color: #e74c3c;
@@ -1864,7 +1797,6 @@ class OpenFOAMInterface(QWidget):
         deleteSelectedButton.clicked.connect(self.deleteSelectedSimulation)
         buttonLayout.addWidget(deleteSelectedButton)
 
-        # Botão para ver os últimos logs
         viewLogsButton = QPushButton("Ver Últimos Logs", dialog)
         viewLogsButton.setStyleSheet(button_style.replace("#e74c3c", "#2980b9").replace("#c0392b", "#3498db").replace("#a93226", "#2471a3"))
         viewLogsButton.clicked.connect(self.showSelectedSimulationLogs)
@@ -2012,7 +1944,6 @@ class OpenFOAMInterface(QWidget):
             self.save_config()
             self.outputArea.append(f"Diretório base configurado para: {self.baseDir}")
             
-            # self.populateTreeView(self.baseDir)
         else:
             self.outputArea.append("Nenhum diretório base selecionado.")
 
@@ -2144,7 +2075,6 @@ if __name__ == "__main__":
     app = QApplication(sys.argv)
     app.setStyle("Fusion")
     
-    # Inicializa a interface
     interface = OpenFOAMInterface()
     interface.show()
     
