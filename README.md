@@ -52,7 +52,7 @@ sudo chmod +x /usr/local/bin/gafoam-multiphaseEuler
 
 Agora basta digitar:
 ```bash
-gafoam
+gafoam-multiphaseEuler
 ```
 
 ---
