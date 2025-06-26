@@ -1,38 +1,75 @@
 import os
 import sys
 import re
+import json
+import signal
+import psutil
 import numpy as np
 import pyqtgraph as pg
-import json
-import psutil
-from PyQt5.QtWidgets import (QApplication, QWidget,QComboBox, QWidgetAction, QPushButton, QVBoxLayout, QHBoxLayout, 
-                             QFileDialog, QTextEdit, QLabel, QMenuBar, QMenu, QAction, 
-                             QLineEdit, QStatusBar, QDialog, QTableWidget, QTableWidgetItem, QMessageBox, QInputDialog)
-from PyQt5.QtCore import QTimer, QProcess, Qt, QDir, QFileInfo, QProcessEnvironment
-from PyQt5.QtGui import QStandardItemModel, QStandardItem, QIcon
-from PyQt5 import QtCore
-import signal 
-
-from rate_calculator import calculate_increase_rate
-from syntax_highlighter import OpenFOAMHighlighter
-from simulation_history import SimulationHistory
 from datetime import datetime
 
+# PyQt5 imports organizados por categoria
+from PyQt5.QtWidgets import (
+    QApplication, QWidget, QComboBox, QWidgetAction, QPushButton,
+    QVBoxLayout, QHBoxLayout, QFileDialog, QTextEdit, QLabel,
+    QMenuBar, QMenu, QAction, QLineEdit, QStatusBar, QDialog,
+    QTableWidget, QTableWidgetItem, QMessageBox, QInputDialog
+)
+from PyQt5.QtCore import (
+    QTimer, QProcess, Qt, QDir, QFileInfo, QProcessEnvironment
+)
+from PyQt5.QtGui import QIcon, QStandardItemModel, QStandardItem
+from PyQt5 import QtCore
+
+# Imports locais
+from rate_calculator import calculate_increase_rate
+from simulation_history import SimulationHistory
+
 class OpenFOAMInterface(QWidget):
+    """Interface moderna para interação com o OpenFOAM MultiphaseEuler."""
+    
     def __init__(self, parent=None):
         super().__init__(parent)
+        
+        # Configuração da janela principal
         self.setWindowTitle("GAFoam — multiphaseEuler")
         self.resize(1000, 600)
-
+        
+        # Carregamento de configurações
         self.config_file = "config.json"
         self.config = self.load_config()
-
-        """
         
-        === PATH CONFIGURATION ===
+        # Inicialização de variáveis de caminho
+        self.init_paths()
         
-        """
+        # Inicialização de dados para o gráfico de resíduos
+        self.init_residual_data()
+        
+        # Configuração do layout principal
+        self.mainVerticalLayout = QVBoxLayout(self)
+        self.mainVerticalLayout.setContentsMargins(5, 5, 5, 5)
+        
+        # Aplicar folha de estilo global
+        self.apply_stylesheet()
+        
+        # Configuração da interface
+        self.setupMenuBar()
+        self.setupMainContentArea()
+        self.setupStatusBar()
+        
+        # Timer para monitoramento do sistema
+        self.systemMonitorTimer = QTimer(self)
+        self.systemMonitorTimer.timeout.connect(self.updateSystemUsage)
+        self.systemMonitorTimer.start(2000)
+        
+        # Configuração final do layout
+        self.setLayout(self.mainVerticalLayout)
+        
+        # Inicialização do histórico de simulação
+        self.simulationHistory = SimulationHistory()
 
+    def init_paths(self):
+        """Inicializa os caminhos e configurações relacionadas a arquivos."""
         loaded_base_dir = self.config.get("baseDir", "") 
         if not loaded_base_dir or not os.path.isdir(loaded_base_dir):
             loaded_base_dir = os.getcwd() 
@@ -44,39 +81,180 @@ class OpenFOAMInterface(QWidget):
         self.currentOpenFOAMVersion = self.config.get("openFOAMVersion", "openfoam12")
         self.currentSolver = "multiphaseEuler"
         self.currentProcess = None
-        
-        """ 
-        
-        === DATA FOR RESIDUAL PLOT ===
-        
-        """
-
+    
+    def init_residual_data(self):
+        """Inicializa estruturas de dados para os gráficos de resíduos."""
         self.residualData = {}
         self.timeData = []
         self.residualLines = {}
-        self.colors = ['r', 'g', 'b', 'c', 'm', 'y', 'w']
-        # Adiciona armazenamento para max(cloud:alpha)
+        self.colors = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd', '#8c564b', '#e377c2']
         self.maxCloudAlphaData = []
-        self.maxCloudAlphaLine = None 
+        self.maxCloudAlphaLine = None
+    
+    def apply_stylesheet(self):
+        """Aplica o estilo global da aplicação."""
+        # Definição do estilo integrado no código
+        self.setStyleSheet("""
+            /* Estilo geral */
+            QWidget {
+                font-family: 'Segoe UI', Arial, sans-serif;
+                font-size: 10pt;
+                color: #333;
+                background-color: #f5f5f7;
+            }
+            
+            /* Barra de menu */
+            QMenuBar {
+                background-color: #1e1e2e;
+                color: #ffffff;
+                padding: 6px;
+                font-weight: bold;
+                border-bottom: 1px solid #2a2a3a;
+            }
+            
+            QMenuBar::item {
+                background-color: transparent;
+                padding: 8px 12px;
+                border-radius: 2px;
+                margin: 1px;
+            }
+            
+            QMenuBar::item:selected {
+                background-color: #3a7ca5;
+                color: #ffffff;
+            }
+            
+            QMenu {
+                background-color: #2d2d3a;
+                color: #ffffff;
+                border: 1px solid #3a7ca5;
+                border-radius: 2px;
+                padding: 5px;
+            }
+            
+            QMenu::item {
+                background-color: transparent;
+                padding: 6px 20px;
+                border-radius: 2px;
+            }
+            
+            QMenu::item:selected {
+                background-color: #3a7ca5;
+                color: #ffffff;
+            }
+            
+            QMenu::separator {
+                height: 1px;
+                background-color: #3a7ca5;
+                margin: 5px 0px;
+            }
+            
+            /* Botões */
+            QPushButton {
+                background-color: #3a7ca5;
+                color: white;
+                border: none;
+                padding: 8px 16px;
+                border-radius: 4px;
+                font-weight: bold;
+                text-align: left;
+            }
+            
+            QPushButton:hover {
+                background-color: #2c5d80;
+            }
+            
+            QPushButton:pressed {
+                background-color: #1d3d54;
+            }
+            
+            /* Terminal e Áreas de Texto */
+            QTextEdit {
+                background-color: #222236;
+                color: #e0e0e0;
+                border: 1px solid #333355;
+                border-radius: 4px;
+                font-family: 'Consolas', 'Courier New', monospace;
+                font-size: 10pt;
+                padding: 5px;
+            }
+            
+            QLineEdit {
+                background-color: #f0f0f0;
+                color: #333;
+                border: 1px solid #ddd;
+                border-radius: 4px;
+                padding: 8px;
+            }
+            
+            /* ComboBox */
+            QComboBox {
+                background-color: #3a7ca5;
+                color: white;
+                border: none;
+                border-radius: 4px;
+                padding: 5px 10px;
+                font-weight: bold;
+                min-width: 120px;
+            }
+            
+            QComboBox:hover {
+                background-color: #2c5d80;
+            }
+            
+            QComboBox::drop-down {
+                border: none;
+                width: 20px;
+            }
+            
+            QComboBox::down-arrow {
+                width: 12px;
+                height: 12px;
+            }
+            
+            QComboBox QAbstractItemView {
+                background-color: #2d2d3a;
+                color: white;
+                border: 1px solid #3a7ca5;
+                selection-background-color: #3a7ca5;
+                outline: none;
+            }
+            
+            /* Status Bar */
+            QStatusBar {
+                background-color: #1e1e2e;
+                color: white;
+                border-top: 1px solid #3a7ca5;
+                padding: 5px;
+                font-weight: bold;
+            }
+            
+            QStatusBar::item {
+                border: none;
+                border-right: 1px solid #3a7ca5;
+                padding: 0px 10px;
+            }
+            
+            /* Títulos de seção */
+            QLabel[sectionTitle="true"] {
+                background-color: #1e1e2e;
+                color: #ffffff;
+                padding: 8px 15px;
+                border-radius: 4px;
+                font-weight: bold;
+                font-size: 13px;
+                border: 1px solid #3a7ca5;
+                margin-bottom: 5px;
+            }
+            
+            /* Dialog */
+            QDialog {
+                background-color: #f5f5f7;
+                border: 1px solid #ddd;
+                border-radius: 6px;
+            }
+        """)
         
-        self.mainVerticalLayout = QVBoxLayout(self)
-        self.mainVerticalLayout.setContentsMargins(5, 5, 5, 5)
-        
-        self.setupMenuBar()
-        self.setupMainContentArea()
-        self.setupStatusBar()
-        
-        self.systemMonitorTimer = QTimer(self)
-        self.systemMonitorTimer.timeout.connect(self.updateSystemUsage)
-        self.systemMonitorTimer.start(2000)
-        
-        self.setLayout(self.mainVerticalLayout)
-        self.simulationHistory = SimulationHistory()
-
-    # def openFileEditor(self):
-    #     """Abre a janela separada para o editor de arquivos."""
-    #     self.fileEditorWindow = FileEditorWindow(self.baseDir, self)
-    #     self.fileEditorWindow.show()
     
     def detectOpenFOAMVersions(self):
         versions = []
@@ -143,111 +321,97 @@ class OpenFOAMInterface(QWidget):
             self.outputArea.append("No folder was selected.")
     
     def setupMenuBar(self):
+        """Configura a barra de menu com design moderno."""
         self.menuBar = QMenuBar(self)
+        
+        # Aplica estilo adicional específico para o menu superior
         self.menuBar.setStyleSheet("""
             QMenuBar {
-                background-color: #2c3e50;
-                color: white;
-                border: 1px solid #34495e;
-                padding: 4px;
+                background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                                stop:0 #2c3e50, stop:1 #1c2e40);
+                color: #ecf0f1;
+                padding: 8px;
                 font-weight: bold;
+                font-size: 11pt;
+                border-bottom: 2px solid #3498db;
             }
+            
             QMenuBar::item {
-                background-color: transparent;
-                padding: 8px 12px;
-                border-radius: 4px;
-            }
-            QMenuBar::item:selected {
-                background-color: #3498db;
-                color: white;
-            }
-            QMenuBar::item:pressed {
-                background-color: #2980b9;
-            }
-        """)
-        
-        fileMenu = QMenu("File", self.menuBar)
-        fileMenu.setStyleSheet("""
-            QMenu {
-                background-color: #34495e;
-                color: white;
-                border: 1px solid #3498db;
-                border-radius: 4px;
-                padding: 5px;
-            }
-            QMenu::item {
-                background-color: transparent;
-                padding: 8px 20px;
+                background: transparent;
+                padding: 10px 15px;
+                margin: 0px 2px;
                 border-radius: 3px;
             }
-            QMenu::item:selected {
-                background-color: #3498db;
+            
+            QMenuBar::item:selected {
+                background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                                stop:0 #3498db, stop:1 #2980b9);
                 color: white;
             }
+            
+            QMenuBar::item:pressed {
+                background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                                stop:0 #2980b9, stop:1 #2980b9);
+            }
+            
+            QMenu {
+                background-color: #2c3e50;
+                color: #ecf0f1;
+                border: 1px solid #3498db;
+                border-radius: 3px;
+                padding: 5px;
+                margin-top: 2px;
+            }
+            
+            QMenu::item {
+                padding: 8px 25px 8px 15px;
+                border-radius: 3px;
+                margin: 2px 5px;
+            }
+            
+            QMenu::item:selected {
+                background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                                stop:0 #3498db, stop:1 #2980b9);
+                color: white;
+            }
+            
             QMenu::separator {
                 height: 1px;
                 background-color: #3498db;
-                margin: 5px 0px;
+                margin: 6px 10px;
             }
         """)
         
-        refreshTreeAction = QAction("Refresh Tree", self)
-        refreshTreeAction.triggered.connect(lambda: self.populateTreeView(QFileInfo(self.unvFilePath).absolutePath() if self.unvFilePath else None))
+        # Menu Arquivo
+        fileMenu = QMenu("Arquivo", self.menuBar)
         
-        importUNVAction = QAction("Load .unv File", self)
+        # Ações do menu arquivo
+        importUNVAction = QAction(QIcon.fromTheme("document-open", QIcon()), "Carregar Arquivo .unv", self)
         importUNVAction.triggered.connect(self.chooseUNV)
         
-        importCaseAction = QAction("Load Case", self)
+        importCaseAction = QAction(QIcon.fromTheme("folder-open", QIcon()), "Carregar Caso", self)
         importCaseAction.triggered.connect(self.chooseCase)
         
-        fileMenu.addAction(refreshTreeAction)
+        setBaseDirAction = QAction(QIcon.fromTheme("folder", QIcon()), "Definir Diretório Base", self)
+        setBaseDirAction.triggered.connect(self.set_base_dir)
+        
         fileMenu.addAction(importUNVAction)
         fileMenu.addAction(importCaseAction)
+        fileMenu.addAction(setBaseDirAction)
         
-        self.menuBar.addMenu(fileMenu)
-        self.mainVerticalLayout.setMenuBar(self.menuBar)
-        
+        # Menu Terminal
         terminalMenu = QMenu("Terminal", self.menuBar)
         
-        clearTerminalAction = QAction("Clear Terminal", self)
+        clearTerminalAction = QAction(QIcon.fromTheme("edit-clear", QIcon()), "Limpar Terminal", self)
         clearTerminalAction.triggered.connect(self.clearTerminal)
         
         terminalMenu.addAction(clearTerminalAction)
         
+        # Menu OpenFOAM
         openfoamMenu = QMenu("OpenFOAM", self.menuBar)
         
+        # ComboBox de versões do OpenFOAM
         self.versionComboBox = QComboBox(self)
-        self.versionComboBox.setStyleSheet("""
-            QComboBox {
-                background-color: #34495e;
-                color: white;
-                border: 1px solid #3498db;
-                border-radius: 4px;
-                padding: 5px 10px;
-                font-weight: bold;
-                min-width: 120px;
-            }
-            QComboBox:hover {
-                background-color: #3498db;
-                border-color: #2980b9;
-            }
-            QComboBox::drop-down {
-                border: none;
-                width: 20px;
-            }
-            QComboBox::down-arrow {
-                image: url(down_arrow.png);
-                width: 12px;
-                height: 12px;
-            }
-            QComboBox QAbstractItemView {
-                background-color: #34495e;
-                color: white;
-                border: 1px solid #3498db;
-                selection-background-color: #3498db;
-                outline: none;
-            }
-        """)
         self.versionComboBox.addItems(self.detectOpenFOAMVersions())
         self.versionComboBox.setCurrentText(self.currentOpenFOAMVersion)
         self.versionComboBox.currentTextChanged.connect(self.setOpenFOAMVersion)
@@ -256,423 +420,342 @@ class OpenFOAMInterface(QWidget):
         versionAction.setDefaultWidget(self.versionComboBox)
         openfoamMenu.addAction(versionAction)
         
+        # Menu Histórico
+        historyMenu = QMenu("Histórico", self.menuBar)
+        
+        viewHistoryAction = QAction(QIcon.fromTheme("document-properties", QIcon()), "Ver Histórico de Simulação", self)
+        viewHistoryAction.triggered.connect(self.openSimulationHistory)
+        
+        historyMenu.addAction(viewHistoryAction)
+        
+        # Adicionar menus à barra
         self.menuBar.addMenu(fileMenu)
         self.menuBar.addMenu(terminalMenu)
         self.menuBar.addMenu(openfoamMenu)
-        
-        historyMenu = QMenu("History", self.menuBar)
-        viewHistoryAction = QAction("View Simulation History", self)
-        viewHistoryAction.triggered.connect(self.openSimulationHistory)
-        historyMenu.addAction(viewHistoryAction)
         self.menuBar.addMenu(historyMenu)
         
         self.mainVerticalLayout.setMenuBar(self.menuBar)
-
-        setBaseDirAction = QAction("Set Base Directory", self)
-        setBaseDirAction.triggered.connect(self.set_base_dir)
-        fileMenu.addAction(setBaseDirAction)
     
     def setOpenFOAMVersion(self, version):
         self.currentOpenFOAMVersion = version
         self.outputArea.append(f"Selected version: {version}")
     
     def setupMainContentArea(self):
-
+        """Configura o layout principal da aplicação com design moderno."""
         contentLayout = QHBoxLayout()
         
-        ''' 
-        
-        === SIMULATION CONTROL BUTTONS (LEFT) ===
-        
-        '''
-
-        leftControlLayout = QVBoxLayout()
-
-        # Main simulation control buttons with icons and styling
-        self.convertButton = QPushButton("⟺ Convert Mesh", self)
-        self.convertButton.setStyleSheet("""
+        # === PAINEL LATERAL (ESQUERDO) ===
+        leftPanel = QWidget()
+        leftPanel.setObjectName("leftPanel")
+        leftPanel.setStyleSheet("""
+            QWidget#leftPanel {
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
+                                stop:0 #2c3e50, stop:1 #1c2e40);
+                border-radius: 8px;
+                padding: 5px;
+                margin: 5px;
+            }
+            
+            QLabel {
+                color: #ecf0f1;
+                font-weight: bold;
+            }
+            
             QPushButton {
-                background-color: #009688;
+                background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                              stop:0 #3498db, stop:1 #2980b9);
                 color: white;
                 border: none;
-                border: 2px solid #00796B;
-                padding: 8px 16px;
+                padding: 10px 16px;
+                border-radius: 5px;
+                font-weight: bold;
+                text-align: left;
+                margin: 3px 0px;
+            }
+            
+            QPushButton:hover {
+                background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                              stop:0 #2980b9, stop:1 #2475a8);
+                border-left: 3px solid #e74c3c;
+            }
+            
+            QPushButton:pressed {
+                background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                              stop:0 #2475a8, stop:1 #1f6591);
+            }
+        """)
+        leftPanel.setFixedWidth(220)
+        
+        leftControlLayout = QVBoxLayout(leftPanel)
+        leftControlLayout.setContentsMargins(10, 15, 10, 15)
+        leftControlLayout.setSpacing(10)
+        
+        # Título do painel de controle
+        controlLabel = QLabel("Controle de Simulação", leftPanel)
+        controlLabel.setProperty("sectionTitle", "true")
+        leftControlLayout.addWidget(controlLabel)
+        
+        # Botões de controle de simulação
+        buttonStyle = """
+            QPushButton {
+                background-color: #3a7ca5;
+                color: white;
+                border: none;
+                padding: 10px 16px;
                 border-radius: 4px;
                 font-weight: bold;
                 text-align: left;
+                margin: 2px 0px;
             }
             QPushButton:hover {
-                background-color: #00796B;
+                background-color: #2c5d80;
             }
             QPushButton:pressed {
-                background-color: #00695C;
+                background-color: #1d3d54;
             }
-        """)
+        """
+        
+        # Botões principais com ícones
+        self.convertButton = QPushButton("⟺  Converter Malha", leftPanel)
+        self.convertButton.setStyleSheet(buttonStyle)
         self.convertButton.clicked.connect(self.convertMesh)
         leftControlLayout.addWidget(self.convertButton)
         
-        self.checkMeshButton = QPushButton("✓ Check Mesh", self)
-        self.checkMeshButton.setStyleSheet("""
-            QPushButton {
-                background-color: #009688;
-                color: white;
-                border: none;
-                border: 2px solid #00796B;
-                padding: 8px 16px;
-                border-radius: 4px;
-                font-weight: bold;
-                text-align: left;
-            }
-            QPushButton:hover {
-                background-color: #00796B;
-            }
-            QPushButton:pressed {
-                background-color: #00695C;
-            }
-        """)
+        self.checkMeshButton = QPushButton("✓  Verificar Malha", leftPanel)
+        self.checkMeshButton.setStyleSheet(buttonStyle)
         self.checkMeshButton.clicked.connect(self.checkMesh)
         leftControlLayout.addWidget(self.checkMeshButton)
         
-        self.decomposeParButton = QPushButton("⚡ Decompose Cores", self)
-        self.decomposeParButton.setStyleSheet("""
-            QPushButton {
-                background-color: #009688;
-                color: white;
-                border: none;
-                border: 2px solid #00796B;
-                padding: 8px 16px;
-                border-radius: 4px;
-                font-weight: bold;
-                text-align: left;
-            }
-            QPushButton:hover {
-                background-color: #00796B;
-            }
-            QPushButton:pressed {
-                background-color: #00695C;
-            }
-        """)
+        self.decomposeParButton = QPushButton("⚡  Decompor Núcleos", leftPanel)
+        self.decomposeParButton.setStyleSheet(buttonStyle)
         self.decomposeParButton.clicked.connect(self.decomposePar)
         leftControlLayout.addWidget(self.decomposeParButton)
         
-        self.reconstructButton = QPushButton("⚙️ Reconstruct", self)
-        self.reconstructButton.setStyleSheet("""
-            QPushButton {
-                background-color: #009688;
-                color: white;
-                border: none;
-                border: 2px solid #00796B;
-                padding: 8px 16px;
-                border-radius: 4px;
-                font-weight: bold;
-                text-align: left;
-            }
-            QPushButton:hover {
-                background-color: #00796B;
-            }
-            QPushButton:pressed {
-                background-color: #00695C;
-            }
-        """)
+        self.reconstructButton = QPushButton("⚙️  Reconstruir", leftPanel)
+        self.reconstructButton.setStyleSheet(buttonStyle)
         self.reconstructButton.clicked.connect(self.reconstructPar)
         leftControlLayout.addWidget(self.reconstructButton)
         
-        self.clearDecomposeButton = QPushButton("🗑️ Clear Processors", self)
-        self.clearDecomposeButton.setStyleSheet("""
-            QPushButton {
-                background-color: #009688;
-                color: white;
-                border: none;
-                border: 2px solid #00796B;
-                padding: 8px 16px;
-                border-radius: 4px;
-                font-weight: bold;
-                text-align: left;
-            }
-            QPushButton:hover {
-                background-color: #00796B;
-            }
-            QPushButton:pressed {
-                background-color: #00695C;
-            }
-        """)
+        self.clearDecomposeButton = QPushButton("🗑️  Limpar Processadores", leftPanel)
+        self.clearDecomposeButton.setStyleSheet(buttonStyle)
         self.clearDecomposeButton.clicked.connect(self.clearDecomposedProcessors)
         leftControlLayout.addWidget(self.clearDecomposeButton)
         
-        self.clearSimulationButton = QPushButton("🗑️ Clear Simulation Files", self)
-        self.clearSimulationButton.setStyleSheet("""
-            QPushButton {
-                background-color: #009688;
-                color: white;
-                border: none;
-                padding: 8px 16px;
-                border-radius: 4px;
-                border: 2px solid #00796B;
-                font-weight: bold;
-                text-align: left;
-            }
-            QPushButton:hover {
-                background-color: #00796B;
-            }
-            QPushButton:pressed {
-                background-color: #00695C;
-            }
-        """)
+        self.clearSimulationButton = QPushButton("🗑️  Limpar Arquivos", leftPanel)
+        self.clearSimulationButton.setStyleSheet(buttonStyle)
         self.clearSimulationButton.clicked.connect(self.clearSimulation)
         leftControlLayout.addWidget(self.clearSimulationButton)
         
-        self.setCoresButton = QPushButton("⚙️ Set Cores for decomposePar", self)
-        self.setCoresButton.setStyleSheet("""
-            QPushButton {
-                background-color: #009688;
-                color: white;
-                border: none;
-                border: 2px solid #00796B;
-                padding: 8px 16px;
-                border-radius: 4px;
-                font-weight: bold;
-                text-align: left;
-            }
-            QPushButton:hover {
-                background-color: #00796B;
-            }
-            QPushButton:pressed {
-                background-color: #00695C;
-            }
-        """)
+        self.setCoresButton = QPushButton("⚙️  Configurar Núcleos", leftPanel)
+        self.setCoresButton.setStyleSheet(buttonStyle)
         self.setCoresButton.clicked.connect(self.configureDecomposeParCores)
         leftControlLayout.addWidget(self.setCoresButton)
         
-        self.logButton = QPushButton("📊 Show Logs (log.foamRun)", self)
-        self.logButton.setStyleSheet("""
-            QPushButton {
-                background-color: #009688;
-                color: white;
-                border: none;
-                border: 2px solid #00796B;
-                padding: 8px 16px;
-                border-radius: 4px;
-                font-weight: bold;
-                text-align: left;
-            }
-            QPushButton:hover {
-                background-color: #00796B;
-            }
-            QPushButton:pressed {
-                background-color: #00695C;
-            }
-        """)
+        self.logButton = QPushButton("📊  Mostrar Logs", leftPanel)
+        self.logButton.setStyleSheet(buttonStyle)
         self.logButton.clicked.connect(self.showSimulationLogs)
         leftControlLayout.addWidget(self.logButton)
-
-        # Add stretch to push buttons to top
+        
+        # Espaço em branco no final
         leftControlLayout.addStretch()
         
-        ''' 
-        
-        === TERMINAL AND PLOT (RIGHT) ===
-        
-        '''
-
+        # === ÁREA PRINCIPAL (DIREITA) ===
         rightContentLayout = QVBoxLayout()
+        rightContentLayout.setSpacing(10)
         
-        # Utility buttons at the top right with icons and styling
-        utilityButtonLayout = QHBoxLayout()
-        
-        # Simulation control buttons (Run, Pause, Resume, Restart, Stop)
-        # Definindo tamanho padrão para todos os botões de simulação
-        sim_button_width = 40
-        sim_button_height = 36
-        sim_button_style = """
-            QPushButton {{
-                min-width: {width}px;
-                max-width: {width}px;
-                min-height: {height}px;
-                max-height: {height}px;
-                border: none;
-                padding: 8px 16px;
-                border-radius: 4px;
-                font-weight: bold;
-                border: 2px solid #00796B;
-                text-align: center;
-                font-size: 15px;
-            }}
-            QPushButton:pressed {{
-                border: 2px solid #888;
-            }}
-        """.format(width=sim_button_width, height=sim_button_height)
-        
-        self.runButton = QPushButton("▶", self)
-        self.runButton.setStyleSheet(sim_button_style + """
+        # === CONTROLES DE SIMULAÇÃO ===
+        controlPanel = QWidget()
+        controlPanel.setObjectName("controlPanel")
+        controlPanel.setStyleSheet("""
+            QWidget#controlPanel {
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
+                              stop:0 #2c3e50, stop:1 #1c2e40);
+                border-radius: 8px;
+                padding: 5px;
+                margin: 5px;
+            }
+            
             QPushButton {
-                background-color: #009688;
-                color: white;
-            }
-            QPushButton:hover {
-                background-color: #00796B;
-
-            }
-            QPushButton:pressed {
-                background-color: #00796B;
+                border-radius: 5px;
+                font-weight: bold;
             }
         """)
+        
+        controlPanelLayout = QHBoxLayout(controlPanel)
+        controlPanelLayout.setContentsMargins(10, 10, 10, 10)
+        controlPanelLayout.setSpacing(10)
+        
+        # Botões de simulação (Run, Pause, Resume, Restart, Stop)
+        simButtonStyle = """
+            QPushButton {
+                min-width: 40px;
+                max-width: 40px;
+                min-height: 36px;
+                max-height: 36px;
+                background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                              stop:0 #3498db, stop:1 #2980b9);
+                color: white;
+                border: none;
+                border-radius: 5px;
+                font-size: 15px;
+                font-weight: bold;
+            }
+            
+            QPushButton:hover {
+                background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                              stop:0 #2980b9, stop:1 #2475a8);
+            }
+            
+            QPushButton:pressed {
+                background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                              stop:0 #2475a8, stop:1 #1f6591);
+            }
+        """
+        
+        self.runButton = QPushButton("▶", controlPanel)
+        self.runButton.setStyleSheet(simButtonStyle)
+        self.runButton.setToolTip("Iniciar Simulação")
         self.runButton.clicked.connect(self.runSimulation)
         
-        self.pauseButton = QPushButton("⏸", self)
-        self.pauseButton.setStyleSheet(sim_button_style + """
-            QPushButton {
-                background-color: #FF9800;
-                color: white;
-            }
-            QPushButton:hover {
-                background-color: #F57C00;
-            }
-            QPushButton:pressed {
-                background-color: #E65100;
-            }
-        """)
+        self.pauseButton = QPushButton("⏸", controlPanel)
+        self.pauseButton.setStyleSheet(simButtonStyle.replace("#3a7ca5", "#e67e22"))
+        self.pauseButton.setToolTip("Pausar Simulação")
         self.pauseButton.clicked.connect(self.pauseSimulation)
         
-        self.resumeButton = QPushButton("⏯", self)
-        self.resumeButton.setStyleSheet(sim_button_style + """
-            QPushButton {
-                background-color: #009688;
-                color: white;
-            }
-            QPushButton:hover {
-                background-color: #00796B;
-
-            }
-            QPushButton:pressed {
-                background-color: #00796B;
-            }
-        """)
+        self.resumeButton = QPushButton("⏯", controlPanel)
+        self.resumeButton.setStyleSheet(simButtonStyle)
+        self.resumeButton.setToolTip("Retomar Simulação")
         self.resumeButton.clicked.connect(self.resumeSimulation)
         
-        self.restartButton = QPushButton("↻", self)
-        self.restartButton.setStyleSheet(sim_button_style + """
-            QPushButton {
-                background-color: #2196F3;
-                color: white;
-            }
-            QPushButton:hover {
-                background-color: #1976D2;
-            }
-            QPushButton:pressed {
-                background-color: #1565C0;
-            }
-        """)
+        self.restartButton = QPushButton("↻", controlPanel)
+        self.restartButton.setStyleSheet(simButtonStyle.replace("#3a7ca5", "#3498db"))
+        self.restartButton.setToolTip("Reiniciar Simulação")
         self.restartButton.clicked.connect(self.restartSimulation)
         self.restartButton.clicked.connect(self.clearResidualPlot)
         
-        self.stopButton = QPushButton("⏹", self)
-        self.stopButton.setStyleSheet(sim_button_style + """
-            QPushButton {
-                background-color: #f44336;
-                color: white;
-            }
-            QPushButton:hover {
-                background-color: #d32f2f;
-            }
-            QPushButton:pressed {
-                background-color: #c62828;
-            }
-        """)
+        self.stopButton = QPushButton("⏹", controlPanel)
+        self.stopButton.setStyleSheet(simButtonStyle.replace("#3a7ca5", "#e74c3c"))
+        self.stopButton.setToolTip("Parar Simulação")
         self.stopButton.clicked.connect(self.stopSimulation)
         
-        # Add simulation control buttons
-        utilityButtonLayout.addWidget(self.runButton)
-        utilityButtonLayout.addWidget(self.pauseButton)
-        utilityButtonLayout.addWidget(self.resumeButton)
-        utilityButtonLayout.addWidget(self.restartButton)
-        utilityButtonLayout.addWidget(self.stopButton)
+        controlPanelLayout.addWidget(self.runButton)
+        controlPanelLayout.addWidget(self.pauseButton)
+        controlPanelLayout.addWidget(self.resumeButton)
+        controlPanelLayout.addWidget(self.restartButton)
+        controlPanelLayout.addWidget(self.stopButton)
         
-        # Utility buttons - tamanho parametrizado
-        utility_button_width = 180
-        utility_button_height = 36
-        utility_button_style = """
-            QPushButton {{
-                min-width: {width}px;
-                max-width: {width}px;
-                min-height: {height}px;
-                max-height: {height}px;
-                background-color: #009688;
+        # Botões utilitários
+        utilButtonStyle = """
+            QPushButton {
+                background-color: #3a7ca5;
                 color: white;
-                border: 2px solid #00796B;
+                border: none;
                 padding: 8px 16px;
                 border-radius: 4px;
                 font-weight: bold;
-                text-align: left;
-                font-size: 12px;
-            }}
-            QPushButton:hover {{
-                background-color: #00796B;
-            }}
-            QPushButton:pressed {{
-                background-color: #00695C;
-            }}
-        """.format(width=utility_button_width, height=utility_button_height)
+            }
+            QPushButton:hover {
+                background-color: #2c5d80;
+            }
+        """
         
-        self.openParaviewButton = QPushButton("Open in ParaView", self)
-        self.openParaviewButton.setStyleSheet(utility_button_style)
+        self.openParaviewButton = QPushButton("ParaView", controlPanel)
+        self.openParaviewButton.setStyleSheet(utilButtonStyle)
+        self.openParaviewButton.setToolTip("Abrir no ParaView")
         self.openParaviewButton.clicked.connect(self.openParaview)
         
-        self.calculateRateButton = QPushButton("Calculate Δy", self)
-        self.calculateRateButton.setStyleSheet(utility_button_style)
+        self.calculateRateButton = QPushButton("Calcular Δy", controlPanel)
+        self.calculateRateButton.setStyleSheet(utilButtonStyle)
+        self.calculateRateButton.setToolTip("Calcular taxa de crescimento")
         self.calculateRateButton.clicked.connect(self.openRateCalculationDialog)
-
-        self.fluidPropertiesButton = QPushButton("Calculate Fluid Properties", self)
-        self.fluidPropertiesButton.setStyleSheet(utility_button_style)
+        
+        self.fluidPropertiesButton = QPushButton("Propriedades", controlPanel)
+        self.fluidPropertiesButton.setStyleSheet(utilButtonStyle)
+        self.fluidPropertiesButton.setToolTip("Calcular propriedades do fluido")
         self.fluidPropertiesButton.clicked.connect(self.openFluidPropertiesDialog)
-        utilityButtonLayout.addWidget(self.openParaviewButton)
-        utilityButtonLayout.addWidget(self.calculateRateButton)
-        utilityButtonLayout.addWidget(self.fluidPropertiesButton)
-        utilityButtonLayout.addStretch()  # Push buttons to left
         
-        rightContentLayout.addLayout(utilityButtonLayout)
+        controlPanelLayout.addWidget(self.openParaviewButton)
+        controlPanelLayout.addWidget(self.calculateRateButton)
+        controlPanelLayout.addWidget(self.fluidPropertiesButton)
+        controlPanelLayout.addStretch()
         
-        # Terminal section
+        rightContentLayout.addWidget(controlPanel)
+        
+        # === ÁREA DO TERMINAL ===
         terminalLayout = QVBoxLayout()
         
-        terminal_title = QLabel("Terminal and Logs", self)
+        terminal_title = QLabel("Terminal e Logs", self)
+        terminal_title.setProperty("sectionTitle", "true")
         terminal_title.setStyleSheet("""
             QLabel {
-                background-color: #34495e;
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+                              stop:0 #2c3e50, stop:1 #3498db);
                 color: #ecf0f1;
-                padding: 8px 15px;
-                border-radius: 4px;
+                padding: 10px 15px;
+                border-radius: 5px;
                 font-weight: bold;
                 font-size: 13px;
-                border: 1px solid #3498db;
+                border-left: 5px solid #e74c3c;
                 margin-bottom: 5px;
+                margin-top: 10px;
             }
         """)
         terminalLayout.addWidget(terminal_title)
         
         self.outputArea = QTextEdit(self)
         self.outputArea.setReadOnly(True)
+        self.outputArea.setMinimumHeight(200)
         self.outputArea.setStyleSheet("""
             QTextEdit {
-                background-color: #2b2b2b;
-                color: #ffffff;
-                border: 1px solid #555555;
-                border-radius: 4px;
-                font-family: 'Courier New', monospace;
+                background-color: #1a1a2e;
+                color: #e0e0e0;
+                border: 1px solid #3498db;
+                border-radius: 5px;
+                font-family: 'Consolas', 'Courier New', monospace;
                 font-size: 11px;
+                padding: 8px;
+                selection-background-color: #3498db;
+                selection-color: white;
+            }
+            
+            QScrollBar:vertical {
+                border: none;
+                background: #2c3e50;
+                width: 12px;
+                margin: 15px 0 15px 0;
+                border-radius: 6px;
+            }
+            
+            QScrollBar::handle:vertical {
+                background: #3498db;
+                min-height: 30px;
+                border-radius: 6px;
+            }
+            
+            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
+                border: none;
+                background: none;
             }
         """)
         terminalLayout.addWidget(self.outputArea)
         
+        # Campo de entrada de comandos
         self.terminalInput = QLineEdit(self)
-        self.terminalInput.setPlaceholderText(">>")
+        self.terminalInput.setPlaceholderText(">> Digite um comando e pressione Enter")
         self.terminalInput.setStyleSheet("""
             QLineEdit {
-                background-color: #3c3c3c;
-                color: #ffffff;
-                border: 1px solid #555555;
-                border-radius: 4px;
-                padding: 8px;
-                font-family: 'Courier New', monospace;
+                background-color: #2c3e50;
+                color: #ecf0f1;
+                border: 1px solid #3498db;
+                border-radius: 5px;
+                padding: 10px;
+                font-family: 'Consolas', 'Courier New', monospace;
+                font-size: 11px;
+                selection-background-color: #3498db;
+            }
+            
+            QLineEdit:focus {
+                border: 2px solid #3498db;
             }
         """)
         self.terminalInput.returnPressed.connect(self.executeTerminalCommand)
@@ -680,104 +763,182 @@ class OpenFOAMInterface(QWidget):
         
         rightContentLayout.addLayout(terminalLayout)
         
-        # Residual plot section        
+        # === ÁREA DE VISUALIZAÇÃO ===
+        visualizationLayout = QHBoxLayout()
+        
+        # === GRÁFICO DE RESÍDUOS ===
         residualLayout = QVBoxLayout()
         
-        plot_title = QLabel("Residual Plot", self)
+        plot_title = QLabel("Gráfico de Resíduos", self)
+        plot_title.setProperty("sectionTitle", "true")
         plot_title.setStyleSheet("""
             QLabel {
-                background-color: #34495e;
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+                              stop:0 #2c3e50, stop:1 #3498db);
                 color: #ecf0f1;
-                padding: 8px 15px;
-                border-radius: 4px;
+                padding: 10px 15px;
+                border-radius: 5px;
                 font-weight: bold;
                 font-size: 13px;
-                border: 1px solid #3498db;
+                border-left: 5px solid #e74c3c;
                 margin-bottom: 5px;
             }
         """)
         residualLayout.addWidget(plot_title)
         
+        # Configuração do gráfico
         self.graphWidget = pg.PlotWidget()
-        self.graphWidget.setBackground('w')
-        self.graphWidget.setLabel('left', 'Residuals')
-        self.graphWidget.setLabel('bottom', 'Time')
-        self.graphWidget.setLogMode(y=True)  
-        self.graphWidget.showGrid(x=True, y=True)
-        self.graphWidget.addLegend()
+        self.graphWidget.setBackground('#1a1a2e')
+        self.graphWidget.setLabel('left', 'Resíduos', color='#ecf0f1')
+        self.graphWidget.setLabel('bottom', 'Tempo', color='#ecf0f1')
+        self.graphWidget.setLogMode(y=True)
+        self.graphWidget.showGrid(x=True, y=True, alpha=0.3)
+        self.graphWidget.addLegend(brush='#2c3e50', pen='#3498db', labelTextColor='#ecf0f1')
+        
+        # Configurações de estilo adicional para o gráfico
+        plotStyle = """
+            color: #ecf0f1;
+            background-color: #1a1a2e;
+            border: 1px solid #3498db;
+            border-radius: 5px;
+            padding: 5px;
+            selection-background-color: #3498db;
+        """
         residualLayout.addWidget(self.graphWidget)
         
+        # Controles do gráfico
         graphControlLayout = QHBoxLayout()
-
-        self.clearPlotButton = QPushButton("Clear Plot", self)
-        self.clearPlotButton.setStyleSheet("""
+        
+        controlButtonStyle = """
             QPushButton {
-                background-color: #009688;
+                background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                              stop:0 #3498db, stop:1 #2980b9);
                 color: white;
                 border: none;
-                padding: 8px 16px;
-                border-radius: 4px;
+                padding: 8px 12px;
+                border-radius: 5px;
                 font-weight: bold;
+                font-size: 11px;
                 text-align: center;
             }
+            
             QPushButton:hover {
-                background-color: #00796B;
+                background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                              stop:0 #2980b9, stop:1 #2475a8);
             }
+            
             QPushButton:pressed {
-                background-color: #00695C;
+                background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                              stop:0 #2475a8, stop:1 #1f6591);
             }
-        """)
+        """
+        
+        self.clearPlotButton = QPushButton("Limpar Gráfico", self)
+        self.clearPlotButton.setStyleSheet(controlButtonStyle)
         self.clearPlotButton.clicked.connect(self.clearResidualPlot)
-
-        self.exportPlotDataButton = QPushButton("Export Data", self)
-        self.exportPlotDataButton.setStyleSheet("""
-            QPushButton {
-                background-color: #009688;
-                color: white;
-                border: none;
-                padding: 8px 16px;
-                border-radius: 4px;
-                font-weight: bold;
-                text-align: center;
-            }
-            QPushButton:hover {
-                background-color: #00796B;
-            }
-            QPushButton:pressed {
-                background-color: #00695C;
-            }
-        """)
-        self.exportPlotDataButton.clicked.connect(self.exportPlotData)  
-
+        
+        self.toggleScaleButton = QPushButton("Alternar Escala", self)
+        self.toggleScaleButton.setStyleSheet(controlButtonStyle)
+        self.toggleScaleButton.clicked.connect(self.toggleLogScale)
+        
+        self.exportPlotDataButton = QPushButton("Exportar Dados", self)
+        self.exportPlotDataButton.setStyleSheet(controlButtonStyle)
+        self.exportPlotDataButton.clicked.connect(self.exportPlotData)
+        
         graphControlLayout.addWidget(self.clearPlotButton)
+        graphControlLayout.addWidget(self.toggleScaleButton)
         graphControlLayout.addWidget(self.exportPlotDataButton)
-
+        
         residualLayout.addLayout(graphControlLayout)
         
-        # --- Painel de Profiling de Performance ---
-        profilingPanel = QVBoxLayout()
-        profilingTitle = QLabel("Profiling de Performance", self)
-        profilingTitle.setStyleSheet("""
+        # === PAINEL DE PROFILING ===
+        profilingPanel = QWidget()
+        profilingPanel.setObjectName("profilingPanel")
+        profilingPanel.setStyleSheet("""
+            QWidget#profilingPanel {
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
+                              stop:0 #2c3e50, stop:1 #1c2e40);
+                border-radius: 8px;
+                padding: 8px;
+                margin: 5px;
+            }
+            
             QLabel {
-                background-color: #34495e;
                 color: #ecf0f1;
-                padding: 8px 15px;
-                border-radius: 4px;
                 font-weight: bold;
-                font-size: 13px;
+            }
+            
+            QTextEdit {
+                background-color: #1a1a2e;
+                color: #2ecc71;
                 border: 1px solid #3498db;
-                margin-bottom: 5px;
+                border-radius: 5px;
+                font-family: 'Consolas', 'Courier New', monospace;
+                font-size: 10px;
+                padding: 8px;
+                selection-background-color: #3498db;
+                selection-color: white;
+            }
+            
+            QPushButton {
+                background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                              stop:0 #e67e22, stop:1 #d35400);
+                color: white;
+                border: none;
+                padding: 8px 16px;
+                border-radius: 5px;
+                font-weight: bold;
+                font-size: 12px;
+                text-align: center;
+            }
+            
+            QPushButton:hover {
+                background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                              stop:0 #d35400, stop:1 #c0392b);
+            }
+            
+            QPushButton:pressed {
+                background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
+                              stop:0 #c0392b, stop:1 #a93226);
+            }
+            
+            QScrollBar:vertical {
+                border: none;
+                background: #2c3e50;
+                width: 10px;
+                margin: 15px 0 15px 0;
+                border-radius: 5px;
+            }
+            
+            QScrollBar::handle:vertical {
+                background: #3498db;
+                min-height: 30px;
+                border-radius: 5px;
+            }
+            
+            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
+                border: none;
+                background: none;
             }
         """)
-        profilingPanel.addWidget(profilingTitle)
-        profilingDesc = QLabel("Ative o profiling para medir o tempo gasto em cada etapa do solver.")
+        profilingPanel.setFixedWidth(250)
+        
+        profilingLayout = QVBoxLayout(profilingPanel)
+        profilingLayout.setContentsMargins(10, 10, 10, 10)
+        
+        profilingTitle = QLabel("Profiling de Performance", profilingPanel)
+        profilingTitle.setProperty("sectionTitle", "true")
+        profilingLayout.addWidget(profilingTitle)
+        
+        profilingDesc = QLabel("Ative o profiling para medir o tempo gasto em cada etapa do solver.", profilingPanel)
         profilingDesc.setWordWrap(True)
         profilingDesc.setStyleSheet("color: #ecf0f1; font-size: 11px; padding: 5px;")
-        profilingPanel.addWidget(profilingDesc)
-        self.profilingButton = QPushButton("Ativar Profiling", self)
+        profilingLayout.addWidget(profilingDesc)
+        
+        self.profilingButton = QPushButton("Ativar Profiling", profilingPanel)
         self.profilingButton.setStyleSheet("""
             QPushButton {
-                background-color: #FF9800;
+                background-color: #e67e22;
                 color: white;
                 border: none;
                 padding: 8px 16px;
@@ -786,54 +947,32 @@ class OpenFOAMInterface(QWidget):
                 font-size: 12px;
             }
             QPushButton:hover {
-                background-color: #F57C00;
-            }
-            QPushButton:pressed {
-                background-color: #E65100;
+                background-color: #d35400;
             }
         """)
         self.profilingButton.clicked.connect(self.enableProfiling)
-        profilingPanel.addWidget(self.profilingButton)
+        profilingLayout.addWidget(self.profilingButton)
         
-        # Área de logs de profiling
-        self.profilingLogs = QTextEdit(self)
+        # Logs de profiling
+        self.profilingLogs = QTextEdit(profilingPanel)
         self.profilingLogs.setReadOnly(True)
-        self.profilingLogs.setMaximumHeight(200)
-        self.profilingLogs.setStyleSheet("""
-            QTextEdit {
-                background-color: #2b2b2b;
-                color: #00ff00;
-                border: 1px solid #555555;
-                border-radius: 4px;
-                font-family: 'Courier New', monospace;
-                font-size: 10px;
-                padding: 5px;
-            }
-        """)
+        self.profilingLogs.setMaximumHeight(300)
         self.profilingLogs.append("Profiling logs aparecerão aqui quando a simulação estiver rodando...")
-        profilingPanel.addWidget(self.profilingLogs)
+        profilingLayout.addWidget(self.profilingLogs)
         
-        profilingPanel.addStretch()
-        profilingWidget = QWidget()
-        profilingWidget.setLayout(profilingPanel)
-        profilingWidget.setMaximumWidth(260)
-        profilingWidget.setMinimumWidth(200)
-        profilingWidget.setStyleSheet("background-color: #263238; border-radius: 6px; margin: 8px;")
-        profilingAndPlotLayout = QHBoxLayout()
-        profilingAndPlotLayout.addWidget(profilingWidget)
-        profilingAndPlotLayout.addLayout(residualLayout)
-        rightContentLayout.addLayout(profilingAndPlotLayout)
-        # --- Fim do painel de profiling ---
+        profilingLayout.addStretch()
         
-        # Add layouts to main content with proper proportions
-        contentLayout.addLayout(leftControlLayout, 1)  # Left side takes 1 part
-        contentLayout.addLayout(rightContentLayout, 2)  # Right side takes 2 parts
+        # Adicionar painéis ao layout de visualização
+        visualizationLayout.addLayout(residualLayout, 3)  # 3 partes para o gráfico
+        visualizationLayout.addWidget(profilingPanel, 1)  # 1 parte para o profiling
+        
+        rightContentLayout.addLayout(visualizationLayout)
+        
+        # Adicionar os painéis principal e lateral ao layout do conteúdo
+        contentLayout.addWidget(leftPanel)
+        contentLayout.addLayout(rightContentLayout, 1)
         
         self.mainVerticalLayout.addLayout(contentLayout, 1)
-
-        # self.treeUpdateTimer = QTimer(self)
-        # self.treeUpdateTimer.timeout.connect(lambda: self.populateTreeView())
-        # self.treeUpdateTimer.start(1000) 
 
     def toggleLogScale(self):
         """Toggles between linear and logarithmic scale on the Y-axis."""
@@ -886,46 +1025,37 @@ class OpenFOAMInterface(QWidget):
                     file.close()
     
     def setupStatusBar(self):
+        """Configura a barra de status com design moderno."""
         self.statusBar = QStatusBar(self)
-        self.statusBar.setStyleSheet("""
-            QStatusBar {
-                background-color: #34495e;
-                color: white;
-                border-top: 1px solid #3498db;
-                padding: 5px;
-                font-weight: bold;
-            }
-            QStatusBar::item {
-                border: none;
-                border-right: 1px solid #3498db;
-                padding: 0px 10px;
-            }
-        """)
         
-        # Styling individual labels
-        label_style = """
+        # Estilo para os labels da barra de status
+        labelStyle = """
             QLabel {
                 background-color: transparent;
                 color: #ecf0f1;
                 padding: 5px 10px;
-                border-radius: 3px;
                 font-weight: bold;
                 font-size: 11px;
             }
         """
         
-        self.meshPathLabel = QLabel("Mesh: None", self.statusBar)
-        self.meshPathLabel.setStyleSheet(label_style + "QLabel { color: #3498db; }")
+        # Informações do mesh
+        self.meshPathLabel = QLabel("Malha: Nenhuma", self.statusBar)
+        self.meshPathLabel.setStyleSheet(labelStyle)
         
+        # Solver atual
         self.solverLabel = QLabel(f"Solver: {self.currentSolver}", self.statusBar)
-        self.solverLabel.setStyleSheet(label_style + "QLabel { color: #2ecc71; }")
+        self.solverLabel.setStyleSheet(labelStyle)
         
+        # Uso da CPU
         self.cpuUsageLabel = QLabel("CPU: --%", self.statusBar)
-        self.cpuUsageLabel.setStyleSheet(label_style + "QLabel { color: #f39c12; }")
+        self.cpuUsageLabel.setStyleSheet(labelStyle)
         
-        self.memUsageLabel = QLabel("Memory: --%", self.statusBar)
-        self.memUsageLabel.setStyleSheet(label_style + "QLabel { color: #e74c3c; }")
-
+        # Uso de memória
+        self.memUsageLabel = QLabel("Memória: --%", self.statusBar)
+        self.memUsageLabel.setStyleSheet(labelStyle)
+        
+        # Adiciona os widgets à barra de status
         self.statusBar.addPermanentWidget(self.solverLabel, 1)
         self.statusBar.addPermanentWidget(self.meshPathLabel, 1)
         self.statusBar.addPermanentWidget(self.cpuUsageLabel)
@@ -966,35 +1096,12 @@ class OpenFOAMInterface(QWidget):
         )
     
     def populateTreeView(self, casePath=None):
-        if not casePath:
-            casePath = QFileInfo(self.unvFilePath).absolutePath() if self.unvFilePath else self.baseDir
-        
-        self.treeModel = QStandardItemModel(self)
-        rootItem = QStandardItem(QIcon.fromTheme("folder"), casePath)
-        self.treeModel.appendRow(rootItem)
-        self.addDirectoryToTree(casePath, rootItem)
-        self.treeView.setModel(self.treeModel)
-        self.treeView.expandAll()
+        """Função removida pois a visualização de árvore foi descontinuada."""
+        pass
     
     def addDirectoryToTree(self, path, parent):
-        dir = QDir(path)
-        dirName = dir.dirName()
-        item = QStandardItem(dirName)
-        
-        item.setIcon(QIcon.fromTheme("folder"))
-        parent.appendRow(item)
-        
-        filters = QDir.AllEntries | QDir.NoDotAndDotDot
-        sorting = QDir.DirsFirst | QDir.Name | QDir.IgnoreCase
-        
-        for info in dir.entryInfoList(filters, sorting):
-            if info.isDir():
-                self.addDirectoryToTree(info.absoluteFilePath(), item)
-            else:
-                fileItem = QStandardItem(info.fileName())
-                fileItem.setIcon(QIcon.fromTheme("text-x-generic"))
-                item.appendRow(fileItem)
-                fileItem.setData(info.absoluteFilePath(), Qt.UserRole)
+        """Função removida pois a visualização de árvore foi descontinuada."""
+        pass
     
     def openParaview(self):
         if not self.baseDir:
@@ -1031,7 +1138,6 @@ class OpenFOAMInterface(QWidget):
         process.setWorkingDirectory(self.baseDir)
         self.setupProcessEnvironment(process)
         self.connectProcessSignals(process)
-        self.outputArea.append(f"Comando executado: {command}")
         process.start("bash", ["-c", command])
     
     def convertMesh(self):
@@ -1046,7 +1152,6 @@ class OpenFOAMInterface(QWidget):
         process.setWorkingDirectory(self.baseDir)
         self.setupProcessEnvironment(process)
         self.connectProcessSignals(process)
-        self.outputArea.append(f"Comando executado: {command}")
         process.start("bash", ["-c", command])
     
     def parseResiduals(self, line):
@@ -1195,7 +1300,6 @@ class OpenFOAMInterface(QWidget):
 
         self.currentProcess.finished.connect(finished)
         self.connectProcessSignals(self.currentProcess)
-        self.outputArea.append(f"Comando executado: {command}")
 
         self.currentProcess.start("bash", ["-l", "-c", command])
         self.currentProcess.finished.connect(lambda: self.logSimulationCompletion(start_time))
@@ -1230,7 +1334,6 @@ class OpenFOAMInterface(QWidget):
         
         self.currentProcess.finished.connect(finished)
         self.connectProcessSignals(self.currentProcess)
-        self.outputArea.append(f"Command: {command}")
         self.currentProcess.start(command)
     
     def decomposePar(self):
@@ -1611,9 +1714,6 @@ class OpenFOAMInterface(QWidget):
             
             fullCommand = f'source /opt/{self.currentOpenFOAMVersion}/etc/bashrc && {command}'
             process.start("bash", ["-l", "-c", fullCommand])
-            
-            firstWord = command.split(' ')[0]
-            self.outputArea.append(f"Comando executado: {firstWord}", 2000)
             
     
     def setupProcessEnvironment(self, process):
@@ -2120,35 +2220,6 @@ class OpenFOAMInterface(QWidget):
             self.outputArea.append("Processo de logs interrompido ao fechar o programa.")
         
         event.accept()  
-
-    def showSimulationInfo(self):
-        info_text = (
-            "Com o tempo, este valor aumentou significativamente, chegando a ~0.739836.\n\n"
-            "Isso significa que em pelo menos uma célula do domínio, cerca de 74% do volume está ocupado por partículas. "
-            "Isso indica uma região de alta concentração, o que pode ser indicativo de aglomeração ou sedimentação das partículas.\n\n"
-            "O que isso pode indicar fisicamente?\n"
-            "O aumento expressivo de max(cloud:alpha) pode indicar:\n\n"
-            "- Formação de uma zona de acúmulo de partículas (sedimentação ou aglomeração local).\n"
-            "- Baixa dispersão devido a características do escoamento ou forças de interação entre partículas.\n"
-            "- Restrição de escoamento em regiões densamente povoadas por partículas.\n\n"
-            "🔧 Considerações numéricas\n"
-            "Apesar do aumento da fração volumétrica de partículas, o solver continua convergindo (Final residual < 1e-6), o que é bom.\n\n"
-            "Porém, valores muito altos de alpha (>0.6) podem causar problemas de estabilidade ou de interpretação física, "
-            "especialmente se o modelo assumir regime diluído (por exemplo, se estiver usando o modelo kinematicCloud, que assume interação fraca entre partículas).\n\n"
-            "Se estiver usando um modelo denso (denseParticleFoam ou similar), é esperado que alpha seja mais alto, mas precisa garantir que está dentro dos limites físicos e consistentes com o modelo de interação partícula-partícula."
-        )
-        dialog = QDialog(self)
-        dialog.setWindowTitle("Informações da Simulação")
-        dialog.resize(600, 400)
-        layout = QVBoxLayout(dialog)
-        label = QLabel(info_text, dialog)
-        label.setWordWrap(True)
-        layout.addWidget(label)
-        closeButton = QPushButton("Fechar", dialog)
-        closeButton.clicked.connect(dialog.accept)
-        layout.addWidget(closeButton)
-        dialog.setLayout(layout)
-        dialog.exec_()
         
 class FluidProperties:
     def __init__(self):
@@ -2191,17 +2262,6 @@ class FileEditorWindow(QDialog):
 
         layout = QVBoxLayout(self)
 
-        # self.searchBar = QLineEdit(self)
-        # self.searchBar.setPlaceholderText("Search files...")
-        # layout.addWidget(self.searchBar)
-
-        # self.treeView = QTreeView(self)
-        # self.treeModel = QStandardItemModel(self)
-        # self.treeView.setModel(self.treeModel)
-        # self.treeView.setHeaderHidden(True)
-        # self.treeView.doubleClicked.connect(self.onTreeViewDoubleClicked)
-        # layout.addWidget(self.treeView)
-
         self.fileEditor = QTextEdit(self)
         layout.addWidget(self.fileEditor)
 
@@ -2215,17 +2275,6 @@ class FileEditorWindow(QDialog):
         buttonLayout.addWidget(self.closeButton)
 
         layout.addLayout(buttonLayout)
-
-        # self.populateTreeView(self.baseDir)
-
-    def populateTreeView(self, casePath):
-        pass
-    def addDirectoryToTree(self, path, parent):
-        pass
-    def filterTreeView(self, text):
-        pass
-    def onTreeViewDoubleClicked(self, index):
-        pass
 
     def saveFile(self):
         if not self.currentFilePath:
@@ -2249,6 +2298,7 @@ if __name__ == "__main__":
     app = QApplication(sys.argv)
     app.setStyle("Fusion")
     
+    # Inicializa a interface
     interface = OpenFOAMInterface()
     interface.show()
     
