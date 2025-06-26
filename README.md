@@ -33,12 +33,14 @@ pip install -r requirements.txt
 Se quiser rodar o programa de qualquer lugar do terminal, faça:
 
 ```bash
+
 echo '#!/bin/bash
 export LD_LIBRARY_PATH=""
-source /CAMINHO/ABSOLUTO/DA/PASTA/.venv/bin/activate
-python3 /CAMINHO/ABSOLUTO/DA/PASTA/main.py' | sudo tee /usr/local/bin/gafoam-multiphaseEuler > /dev/null
+source /home/reynolds-01/Documentos/GAFoam---multiphaseSolver/.venv/bin/activate
+python3 /home/reynolds-01/Documentos/GAFoam---multiphaseSolver/main.py "$@"' | sudo tee /usr/local/bin/gafoam-multiphaseEuler > /dev/null
 
 sudo chmod +x /usr/local/bin/gafoam-multiphaseEuler
+
 
 ```
 **Substitua `/CAMINHO/ABSOLUTO/DA/PASTA` pelo caminho completo da pasta do projeto.**
