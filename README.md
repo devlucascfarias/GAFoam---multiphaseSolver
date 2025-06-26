@@ -1,4 +1,4 @@
-# GAFoamincompressibleDenseParticleFluid
+# GAFoam adaptado para o solver multiphaseEuler
 
 Interface gráfica para OpenFOAM utilizando Python e PyQt5.
 
