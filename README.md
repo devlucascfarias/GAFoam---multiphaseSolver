@@ -28,7 +28,7 @@ pip install -r requirements.txt
 
 ---
 
-## (Criando um comando global `gafoam-multiphaseEuler`
+## Criando um comando global `gafoam-multiphaseEuler`
 
 Se quiser rodar o programa de qualquer lugar do terminal, faça:
 
