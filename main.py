@@ -29,41 +29,31 @@ class OpenFOAMInterface(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         
-        # Configuração da janela principal
         self.setWindowTitle("GAFoam — multiphaseEuler")
         self.resize(1000, 600)
         
-        # Carregamento de configurações
         self.config_file = "config.json"
         self.config = self.load_config()
         
-        # Inicialização de variáveis de caminho
         self.init_paths()
         
-        # Inicialização de dados para o gráfico de resíduos
         self.init_residual_data()
         
-        # Configuração do layout principal
         self.mainVerticalLayout = QVBoxLayout(self)
         self.mainVerticalLayout.setContentsMargins(5, 5, 5, 5)
         
-        # Aplicar folha de estilo global
         self.apply_stylesheet()
         
-        # Configuração da interface
         self.setupMenuBar()
         self.setupMainContentArea()
         self.setupStatusBar()
         
-        # Timer para monitoramento do sistema
         self.systemMonitorTimer = QTimer(self)
         self.systemMonitorTimer.timeout.connect(self.updateSystemUsage)
         self.systemMonitorTimer.start(2000)
         
-        # Configuração final do layout
         self.setLayout(self.mainVerticalLayout)
         
-        # Inicialização do histórico de simulação
         self.simulationHistory = SimulationHistory()
 
     def init_paths(self):
