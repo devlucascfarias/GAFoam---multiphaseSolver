@@ -13,7 +13,7 @@ git clone https://github.com/devlucascfarias/GAFoam---multiphaseSolver.git && cd
 ```
 
 
-## Instalação e Execução
+## Se ocorreu algum erro, faça manualmente.
 
 ### 1. Clone o repositório
 
