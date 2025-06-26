@@ -61,4 +61,46 @@ gafoam-multiphaseEuler
 
 ---
 
+## Como usar
+
+2. **Carregue um caso**
+   - Clique em **Arquivo > Carregar Caso** para selecionar o diretório do caso OpenFOAM (deve conter as pastas `0`, `constant`, `system`).
+   - Ou clique em **Arquivo > Carregar Arquivo .unv** para importar apenas a malha UNV.
+
+3. **Configuração do diretório base**
+   - Se necessário, defina o diretório base em **Arquivo > Definir Diretório Base**.
+
+4. **Conversão e checagem de malha**
+   - Use os botões laterais `convertMesh` para converter arquivos `.unv` para OpenFOAM.
+   - Use `checkMesh` para validar a malha carregada.
+
+5. **Decomposição e reconstrução**
+   - `decomposePar`: Decompõe o caso para execução paralela.
+   - `Reconstruct`: Reconstrói os resultados após simulação paralela.
+   - `clearProcessors`: Remove diretórios `processor*` antigos.
+
+6. **Configuração de núcleos**
+   - Use `configureDecomposeParCores` para definir o número de núcleos no `decomposeParDict`.
+
+7. **Execução da simulação**
+   - Clique em **Iniciar** para rodar a simulação. Será solicitado o tempo final (`endTime`).
+   - Use **Pausar**, **Retomar**, **Reiniciar** ou **Parar** conforme necessário.
+
+8. **Visualização**
+   - **ParaView**: Abre o caso no ParaView.
+   - **Gráfico de Resíduos**: Visualize resíduos em tempo real.
+   - **Exportar Dados**: Exporte resíduos para CSV.
+
+9. **Histórico de Simulações**
+   - Acesse em **Histórico > Ver Histórico de Simulação**.
+   - Veja, exclua ou limpe entradas do histórico.
+   - Visualize os últimos logs de cada simulação.
+
+10. **Utilitários**
+    - **Calcular Δy**: Calcula taxa de crescimento de malha.
+    - **Propriedades**: Calcula propriedades do fluido (densidade, viscosidade).
+
+11. **Terminal Integrado**
+    - Execute comandos OpenFOAM diretamente pelo terminal na interface.
+
 
