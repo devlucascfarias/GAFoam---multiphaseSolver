@@ -26,16 +26,9 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-### 4. Execute o programa
-
-```bash
-LD_LIBRARY_PATH="" python main.py
-
-```
-
 ---
 
-## (Opcional) Criando um comando global `gafoam`
+## (Criando um comando global `gafoam-multiphaseEuler`
 
 Se quiser rodar o programa de qualquer lugar do terminal, faça:
 
