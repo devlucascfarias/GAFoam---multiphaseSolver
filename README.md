@@ -57,13 +57,4 @@ gafoam
 
 ---
 
-## Observações
 
-- Certifique-se de que o OpenFOAM esteja instalado e configurado no seu sistema, se necessário.
-- Se aparecer erro relacionado ao Qt, instale a dependência do sistema:
-  ```bash
-  sudo apt install libxcb-xinerama0
-  ```
-- Para dúvidas, abra uma issue no repositório.
-
----
