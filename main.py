@@ -5,8 +5,12 @@ import json
 import signal
 import psutil
 import numpy as np
-import pyqtgraph as pg
 from datetime import datetime
+from matplotlib_residual_plotter import MatplotlibResidualPlotter
+
+# Configuração para evitar o aviso QSocketNotifier
+import matplotlib
+matplotlib.use('Agg')  # Usa um backend que não requer GUI
 
 from PyQt5.QtWidgets import (
     QApplication, QWidget, QComboBox, QWidgetAction, QPushButton,
@@ -29,38 +33,29 @@ class OpenFOAMInterface(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         
-        # Configuração da janela principal
         self.setWindowTitle("GAFoam — multiphaseEuler")
         self.resize(1000, 600)
         
-        # Carregamento de configurações
         self.config_file = "config.json"
         self.config = self.load_config()
         
-        # Inicialização de variáveis de caminho
         self.init_paths()
         
-        # Inicialização de dados para o gráfico de resíduos
         self.init_residual_data()
         
-        # Configuração do layout principal
         self.mainVerticalLayout = QVBoxLayout(self)
         self.mainVerticalLayout.setContentsMargins(5, 5, 5, 5)
         
-        # Aplicar folha de estilo global
         self.apply_stylesheet()
         
-        # Configuração da interface
         self.setupMenuBar()
         self.setupMainContentArea()
         self.setupStatusBar()
         
-        # Timer para monitoramento do sistema
         self.systemMonitorTimer = QTimer(self)
         self.systemMonitorTimer.timeout.connect(self.updateSystemUsage)
         self.systemMonitorTimer.start(2000)
         
-        # Configuração final do layout
         self.setLayout(self.mainVerticalLayout)
         
         self.simulationHistory = SimulationHistory()
@@ -87,6 +82,7 @@ class OpenFOAMInterface(QWidget):
         self.colors = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd', '#8c564b', '#e377c2']
         self.maxCloudAlphaData = []
         self.maxCloudAlphaLine = None
+        self.profilingLogs = []  
     
     def apply_stylesheet(self):
         """Aplica o estilo global da aplicação."""
@@ -307,6 +303,14 @@ class OpenFOAMInterface(QWidget):
                 self.systemDir = os.path.join(self.baseDir, "system")
                 self.config["baseDir"] = self.baseDir
                 self.save_config()
+                
+                # Atualiza o caminho do log para o residualPlotter
+                if hasattr(self, 'residualPlotter'):
+                    self.residualPlotter.log_path = os.path.join(self.baseDir, "log.foamRun")
+                    self.residualPlotter.clear_plot()
+                    # Garantimos que a animação esteja parada
+                    self.residualPlotter.stop_plotting()
+                    
                 self.outputArea.append(f"Case folder selected: {casePath}")
                 self.meshPathLabel.setText(f"Mesh: {QFileInfo(casePath).fileName()}")
                 self.outputArea.append("Case loaded successfully.")
@@ -494,7 +498,6 @@ class OpenFOAMInterface(QWidget):
             }
             QPushButton:hover {
                 background-color: #2c5d80;
-                cursor: pointer;
             }
             QPushButton:pressed {
                 background-color: #1d3d54;
@@ -745,23 +748,9 @@ class OpenFOAMInterface(QWidget):
         """)
         residualLayout.addWidget(self.plot_title)
         
-        self.graphWidget = pg.PlotWidget()
-        self.graphWidget.setBackground('#1a1a2e')
-        self.graphWidget.setLabel('left', 'Resíduos', color='#ecf0f1')
-        self.graphWidget.setLabel('bottom', 'Tempo', color='#ecf0f1')
-        self.graphWidget.setLogMode(y=True)
-        self.graphWidget.showGrid(x=True, y=True, alpha=0.3)
-        self.graphWidget.addLegend(brush='#2c3e50', pen='#3498db', labelTextColor='#ecf0f1')
-        
-        plotStyle = """
-            color: #ecf0f1;
-            background-color: #1a1a2e;
-            border: 1px solid #3498db;
-            border-radius: 2px;
-            padding: 5px;
-            selection-background-color: #3498db;
-        """
-        residualLayout.addWidget(self.graphWidget)
+        # Adiciona o novo plotter baseado em matplotlib
+        self.residualPlotter = MatplotlibResidualPlotter(self, os.path.join(self.baseDir, "log.foamRun"), self.baseDir)
+        residualLayout.addWidget(self.residualPlotter)
         
         graphControlLayout = QHBoxLayout()
         
@@ -820,30 +809,21 @@ class OpenFOAMInterface(QWidget):
 
     def exportPlotData(self):
         """Exports the plot data to a CSV file."""
-        if not self.timeData:
-            self.outputArea.append("No data to export", 2000)
-            return
-            
         fileName, _ = QFileDialog.getSaveFileName(
             self, "Save Residual Data", "", "CSV Files (*.csv)"
         )
         
         if fileName:
-            with open(fileName, 'w') as f:
-                header = "Time," + ",".join(self.residualData.keys())
-                f.write(header + "\n")
-                
-                for i, time in enumerate(self.timeData):
-                    line = f"{time}"
-                    for var in self.residualData:
-                        if i < len(self.residualData[var]):
-                            value = self.residualData[var][i]
-                            line += f",{value if value is not None else ''}"
-                        else:
-                            line += ","
-                    f.write(line + "\n")
-                    
-            self.outputArea.append(f"Data exported to {fileName}")
+            if hasattr(self, 'residualPlotter'):
+                success = self.residualPlotter.export_data(fileName)
+                if success:
+                    self.outputArea.append(f"Data exported to {fileName}")
+                else:
+                    self.outputArea.append("Error exporting data.")
+            else:
+                self.outputArea.append("No residual plotter available.")
+        else:
+            self.outputArea.append("Export canceled.")
         
     def onTreeViewDoubleClicked(self, index):
         """Abre a janela de edição de arquivos ao clicar em um arquivo na árvore."""
@@ -1005,17 +985,15 @@ class OpenFOAMInterface(QWidget):
                 if not self.timeData or self.timeData[-1] != time_value:
                     self.timeData.append(time_value)
             except (ValueError, IndexError):
-                pass  # Ignora erros de conversão
+                pass  
 
-        # Captura o valor de 'deltaT'
         deltaT_match = re.search(r"deltaT = ([\d.eE+-]+)", line)
         if deltaT_match:
             try:
                 self.currentDeltaT = float(deltaT_match.group(1))
             except ValueError:
-                pass # Ignora erros de conversão
+                pass 
 
-        # Atualiza o título do gráfico
         if hasattr(self, 'plot_title'):
              deltaT_text = f"{self.currentDeltaT}" if self.currentDeltaT is not None else "--"
              time_text = f"{self.currentTime}" if self.currentTime is not None else "--"
@@ -1036,14 +1014,12 @@ class OpenFOAMInterface(QWidget):
             time_str = current_time_match.group(1)
             numeric_part = time_str.rstrip('s')
             current_time = float(numeric_part)
-            # Update the current time display string
             self.currentTime = time_str
             if current_time not in self.timeData:
                 self.timeData.append(current_time)
                 if len(self.maxCloudAlphaData) < len(self.timeData):
                     self.maxCloudAlphaData.append(None)
 
-        # Captura todas as variáveis, incluindo aquelas com caracteres especiais como p_rgh e alpha.particles
         residual_match = re.search(
             r'([A-Z]+[a-zA-Z]*)[:]*\s+Solving for ([a-zA-Z0-9_.:]+), Initial residual = ([0-9.eE+-]+)',
             line
@@ -1053,23 +1029,21 @@ class OpenFOAMInterface(QWidget):
             variable = residual_match.group(2)
             residual = float(residual_match.group(3))
 
-            # Adiciona a variável no gráfico de resíduos
+            # Mantém a estrutura de dados original para compatibilidade
             if variable not in self.residualData:
                 self.residualData[variable] = []
-                color_idx = len(self.residualData) % len(self.colors)
-                pen = pg.mkPen(color=self.colors[color_idx], width=2)
-                self.residualLines[variable] = self.graphWidget.plot(
-                    [], [], name=variable, pen=pen
-                )
-
-            # Garante que o array de resíduos esteja com o tamanho correto
+            
             while len(self.residualData[variable]) < len(self.timeData) - 1:
                 self.residualData[variable].append(None)
-
+            
             self.residualData[variable].append(residual)
-            self.updateResidualPlot(variable)
+            
+            # Atualiza o log_path do residualPlotter caso tenha mudado
+            if hasattr(self, 'residualPlotter'):
+                log_path = os.path.join(self.baseDir, "log.foamRun")
+                if self.residualPlotter.log_path != log_path:
+                    self.residualPlotter.log_path = log_path
 
-        # Captura o valor máximo da fração de volume (cloud:alpha)
         max_alpha_match = re.search(r'particles fraction, min, max = .+ ([0-9.eE+-]+)', line)
         if not max_alpha_match:
             max_alpha_match = re.search(r'Max cell volume fraction\s*=\s*([0-9.eE+-]+)', line)
@@ -1089,30 +1063,29 @@ class OpenFOAMInterface(QWidget):
 
     def updateResidualPlot(self, variable):
         """
-        Atualiza o gráfico de resíduos para uma variável específica.
+        Atualiza o gráfico de resíduos com os dados mais recentes.
         """
-        if variable in self.residualLines:
-            filtered_time_data = [t for t, r in zip(self.timeData, self.residualData[variable]) if r is not None]
-            filtered_residual_data = [r for r in self.residualData[variable] if r is not None]
-
-            if filtered_time_data and filtered_residual_data:
-                self.residualLines[variable].setData(filtered_time_data, filtered_residual_data)
+        if variable in self.residualData:
+            self.residualPlotter.update_plot(self.timeData, self.residualData[variable])
+            self.plot_title.setText(f"Gráfico de Resíduos | deltaT: {self.currentDeltaT}  Time: {self.currentTime}")
 
     def updateMaxCloudAlphaPlot(self):
-        if self.maxCloudAlphaLine is None:
-            pen = pg.mkPen(color='r', width=2, style=Qt.DashLine)
-            self.maxCloudAlphaLine = self.graphWidget.plot([], [], name='max(cloud:alpha)', pen=pen)
-        times = [t for t, v in zip(self.timeData, self.maxCloudAlphaData) if v is not None]
-        values = [v for v in self.maxCloudAlphaData if v is not None]
-        self.maxCloudAlphaLine.setData(times, values)
+        """
+        Método mantido para compatibilidade com o código existente.
+        """
+        pass
 
     def clearResidualPlot(self):
-        self.timeData = []
-        self.residualData = {}
-        self.graphWidget.clear()
-        self.residualLines = {}
-        self.maxCloudAlphaData = []
-        self.maxCloudAlphaLine = None
+        """
+        Limpa o gráfico de resíduos.
+        """
+        if hasattr(self, 'residualPlotter'):
+            self.residualPlotter.clear_plot()
+            self.residualPlotter.stop_plotting()
+            self.outputArea.append("Gráfico de resíduos limpo.")
+            
+            self.timeData = []
+            self.residualData = {}
 
     def connectProcessSignals(self, process):
         """
@@ -1170,7 +1143,16 @@ class OpenFOAMInterface(QWidget):
 
     def logSimulationCompletion(self, start_time):
         end_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        status = "Finished" if self.currentProcess.exitCode() == 0 else "Interrupted"
+        
+        # Verifica se o processo ainda existe antes de acessar exitCode
+        if self.currentProcess is not None:
+            try:
+                status = "Finished" if self.currentProcess.exitCode() == 0 else "Interrupted"
+            except Exception:
+                status = "Unknown"
+        else:
+            status = "Unknown"
+            
         self.simulationHistory.add_entry(
             solver=self.currentSolver,
             case_path=self.unvFilePath,
@@ -1329,12 +1311,31 @@ class OpenFOAMInterface(QWidget):
         self.setupProcessEnvironment(self.currentProcess)
         self.currentProcess.setWorkingDirectory(caseDir)
 
+        # Inicia a plotagem dos resíduos
+        if hasattr(self, 'residualPlotter'):
+            log_path = os.path.join(caseDir, "log.foamRun")
+            self.residualPlotter.log_path = log_path
+            self.residualPlotter.clear_plot()
+            self.residualPlotter.start_plotting()
+            self.outputArea.append("Iniciando plotagem de resíduos...")
+
         def finished(code):
             if code == 0:
                 self.outputArea.append("Simulação finalizada com sucesso.")
             else:
                 self.outputArea.append(f"Simulação finalizada com erro: {code}")
-            self.logSimulationCompletion(start_time)
+            # Para a plotagem dos resíduos quando a simulação termina
+            if hasattr(self, 'residualPlotter'):
+                self.residualPlotter.stop_plotting()
+            
+            # Salva uma cópia local do processo atual antes de potencialmente modificá-lo
+            current_process = self.currentProcess
+            try:
+                self.logSimulationCompletion(start_time)
+            except Exception as e:
+                self.outputArea.append(f"Erro ao registrar conclusão: {e}")
+                
+        self.currentProcess.finished.connect(finished)
 
         self.currentProcess.finished.connect(finished)
         self.connectProcessSignals(self.currentProcess)
@@ -1424,6 +1425,11 @@ class OpenFOAMInterface(QWidget):
                     p.kill()  
                 parent.kill()
                 self.outputArea.append("Simulação interrompida com sucesso.")
+                
+                # Para a plotagem dos resíduos
+                if hasattr(self, 'residualPlotter'):
+                    self.residualPlotter.stop_plotting()
+                    self.outputArea.append("Plotagem de resíduos interrompida.")
             except psutil.NoSuchProcess:
                 self.outputArea.append("O processo já foi encerrado.")
             except Exception as e:
@@ -1942,6 +1948,14 @@ class OpenFOAMInterface(QWidget):
             self.systemDir = os.path.join(self.baseDir, "system")
             self.config["baseDir"] = self.baseDir
             self.save_config()
+            
+            # Atualiza o caminho do log para o residualPlotter
+            if hasattr(self, 'residualPlotter'):
+                self.residualPlotter.log_path = os.path.join(self.baseDir, "log.foamRun")
+                self.residualPlotter.clear_plot()
+                # Garantimos que a animação esteja parada
+                self.residualPlotter.stop_plotting()
+                
             self.outputArea.append(f"Diretório base configurado para: {self.baseDir}")
             
         else:
