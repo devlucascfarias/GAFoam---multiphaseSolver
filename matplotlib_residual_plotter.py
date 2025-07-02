@@ -7,6 +7,8 @@ from PyQt5.QtWidgets import QWidget, QVBoxLayout
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
 
+plot_mode = "log"
+
 class MatplotlibResidualPlotter(QWidget):
     def __init__(self, parent=None, log_path=None, base_dir=None):
         super().__init__(parent)
@@ -19,7 +21,7 @@ class MatplotlibResidualPlotter(QWidget):
         ]
 
         self.regex_patterns = {
-            # "p_rgh": r"Solving for p_rgh, Initial residual = ([\d\.eE\-\+]+)",
+            "p_rgh": r"Solving for p_rgh, Initial residual = ([\d\.eE\-\+]+)",
             "p": r"Solving for p, Initial residual = ([\d\.eE\-\+]+)",
             "alpha.particles": r"Solving for alpha.particles, Initial residual = ([\d\.eE\-\+]+)",
             "alpha.water": r"Solving for alpha.water, Initial residual = ([\d\.eE\-\+]+)",
@@ -31,8 +33,11 @@ class MatplotlibResidualPlotter(QWidget):
             "T.water": r"Solving for T.water, Initial residual = ([\d\.eE\-\+]+)",
             "Theta.particles": r"Solving for Theta.particles, Initial residual = ([\d\.eE\-\+]+)",
         }
+        
+        self.time_pattern = r"Time = ([\d\.eE\-\+]+)s?"
 
         self.residuals = {field: [] for field in self.fields}
+        self.time_values = []  
         self.visibility = {field: True for field in self.fields}
         self.plot_lines = {}
         self.ani = None
@@ -49,17 +54,20 @@ class MatplotlibResidualPlotter(QWidget):
         
         layout.addWidget(self.canvas)
         self.setLayout(layout)
+
         
-        self.ax.set_yscale("log")
-        self.ax.set_xlabel("Iterações")
-        self.ax.set_ylabel("Resíduo (log)")
+        self.ax.set_yscale(plot_mode)
+        self.ax.set_title("Resíduos da Simulação OpenFOAM")
+        self.ax.set_xlabel("Tempo (s)")
+        self.ax.set_ylabel(f"Resíduo ({plot_mode})")
         self.ax.grid(True)
         
         self.fig.subplots_adjust(left=0.1, right=0.95, top=0.9, bottom=0.1)
         
         self.fig.canvas.mpl_connect("pick_event", self.on_pick)
         
-        self.canvas.draw()
+        self.canvas.draw_idle()
+        self.canvas.flush_events()
     
     def read_log(self):
         if not os.path.exists(self.log_path):
@@ -71,12 +79,35 @@ class MatplotlibResidualPlotter(QWidget):
 
             for field in self.residuals:
                 self.residuals[field].clear()
+            self.time_values.clear()
+
+            current_time = 0.0
+            time_residual_pairs = {field: [] for field in self.fields}
 
             for line in lines:
+                time_match = re.search(self.time_pattern, line)
+                if time_match:
+                    current_time = float(time_match.group(1))
+                    continue
+
                 for field, pattern in self.regex_patterns.items():
                     match = re.search(pattern, line)
                     if match:
-                        self.residuals[field].append(float(match.group(1)))
+                        residual_value = float(match.group(1))
+                        time_residual_pairs[field].append((current_time, residual_value))
+
+            all_times = set()
+            for field in self.fields:
+                for time, _ in time_residual_pairs[field]:
+                    all_times.add(time)
+            
+            sorted_times = sorted(all_times)
+            self.time_values = sorted_times
+
+            for field in self.fields:
+                field_data = dict(time_residual_pairs[field])
+                self.residuals[field] = [field_data.get(t) for t in sorted_times]
+
         except Exception as e:
             print(f"Error reading log file: {e}")
     
@@ -84,10 +115,11 @@ class MatplotlibResidualPlotter(QWidget):
         self.read_log()
         self.ax.clear()
 
-        self.ax.set_yscale("log")
-        self.ax.set_xlabel("Iterações")
-        self.ax.set_ylabel("Resíduo (log)")
+        self.ax.set_yscale(plot_mode)
+        self.ax.set_xlabel("Tempo (s)")
+        self.ax.set_ylabel(f"Resíduo ({plot_mode})")
         self.ax.grid(True)
+        
 
         self.plot_lines.clear()
         colors = plt.cm.tab10.colors
@@ -95,16 +127,21 @@ class MatplotlibResidualPlotter(QWidget):
 
         for idx, field in enumerate(self.fields):
             if len(self.residuals[field]) > 0 and self.visibility[field]:
-                line, = self.ax.plot(
-                    self.residuals[field],
-                    label=field,
-                    color=colors[idx % len(colors)],
-                    linewidth=1
-                )
-                self.plot_lines[field] = line
-                has_data = True
+                valid_data = [(t, r) for t, r in zip(self.time_values, self.residuals[field]) if r is not None]
+                if valid_data:
+                    times, residuals = zip(*valid_data)
+                    line, = self.ax.plot(
+                        times,
+                        residuals,
+                        label=field,
+                        color=colors[idx % len(colors)],
+                        linewidth=1,
+                        marker='o',
+                        markersize=3
+                    )
+                    self.plot_lines[field] = line
+                    has_data = True
 
-        # Só cria a legenda se houver pelo menos uma linha plotada
         if has_data:
             legend = self.ax.legend(fontsize="small", loc="upper right")
             if legend:
@@ -114,7 +151,8 @@ class MatplotlibResidualPlotter(QWidget):
                         legline.set_pickradius(5)
                         legline.set_alpha(1.0 if self.visibility[field] else 0.2)
 
-        self.canvas.draw()
+        self.canvas.draw_idle()  
+        self.canvas.flush_events() 
     
     def on_pick(self, event):
         legend_line = event.artist
@@ -129,26 +167,24 @@ class MatplotlibResidualPlotter(QWidget):
                     self.update_plot(None)
     
     def clear_plot(self):
-        # Para a animação se estiver rodando
         if self.is_plotting and self.ani is not None:
             self.stop_plotting()
             
-        # Limpa os dados
         for field in self.residuals:
             self.residuals[field].clear()
+        
+        self.time_values.clear()
             
-        # Limpa o plot
         self.ax.clear()
-        self.ax.set_yscale("log")
+        self.ax.set_yscale(plot_mode)
         self.ax.set_title("Resíduos da Simulação OpenFOAM")
-        self.ax.set_xlabel("Iterações")
-        self.ax.set_ylabel("Resíduo (log)")
+        self.ax.set_xlabel("Tempo (s)")
+        self.ax.set_ylabel(f"Resíduo {plot_mode}")
         self.ax.grid(True)
         
-        # Atualiza o canvas
-        self.canvas.draw()
+        self.canvas.draw_idle()
+        self.canvas.flush_events()
         
-        # Limpa as referências às linhas plotadas
         self.plot_lines.clear()
     
     def set_log_path(self, path):
@@ -158,17 +194,19 @@ class MatplotlibResidualPlotter(QWidget):
     def export_data(self, file_path):
         try:
             with open(file_path, 'w') as f:
-                # Write header
                 fields_with_data = [field for field in self.fields if self.residuals[field]]
-                header = "Iteration," + ",".join(fields_with_data)
+                header = "Time," + ",".join(fields_with_data)
                 f.write(header + "\n")
                 
-                # Write data
-                max_length = max([len(self.residuals[field]) for field in fields_with_data], default=0)
+                max_length = max([len(self.residuals[field]) for field in fields_with_data] + [len(self.time_values)], default=0)
                 for i in range(max_length):
-                    line = f"{i+1}"
+                    if i < len(self.time_values):
+                        line = f"{self.time_values[i]}"
+                    else:
+                        line = ""
+                    
                     for field in fields_with_data:
-                        if i < len(self.residuals[field]):
+                        if i < len(self.residuals[field]) and self.residuals[field][i] is not None:
                             line += f",{self.residuals[field][i]}"
                         else:
                             line += ","
@@ -178,26 +216,36 @@ class MatplotlibResidualPlotter(QWidget):
             print(f"Error exporting data: {e}")
             return False
     
+    def ensure_plot_visibility(self):
+        """Garante que o gráfico seja visível e atualizado."""
+        if hasattr(self, 'canvas') and self.canvas is not None:
+            self.canvas.draw()
+            self.canvas.flush_events()
+            try:
+                from PyQt5.QtWidgets import QApplication
+                QApplication.processEvents()
+            except ImportError:
+                pass
+    
     def start_plotting(self):
         """Inicia a animação do gráfico"""
         if not self.is_plotting:
             self.is_plotting = True
-            # Mantém a referência global para a animação
             global _anim_reference_list
             if not hasattr(sys.modules[__name__], '_anim_reference_list'):
                 _anim_reference_list = []
                 
-            # Cria nova animação
             self.ani = animation.FuncAnimation(
                 self.fig, 
                 self.update_plot, 
                 interval=1000, 
-                cache_frame_data=False,  # Evita cache ilimitado
-                save_count=100  # Limita o número de frames salvos
+                cache_frame_data=False,  
+                save_count=100 
             )
             
-            # Adiciona à lista global para evitar que seja coletada pelo garbage collector
             _anim_reference_list.append(self.ani)
+            
+            self.ensure_plot_visibility()
             
             return True
         return False
@@ -205,15 +253,30 @@ class MatplotlibResidualPlotter(QWidget):
     def stop_plotting(self):
         """Para a animação do gráfico"""
         if self.is_plotting and self.ani is not None:
-            # Armazena a animação em uma variável local para evitar garbage collection
             _temp_anim = self.ani
             
-            # Para o evento de atualização
             if hasattr(self.ani, 'event_source') and self.ani.event_source is not None:
                 self.ani.event_source.stop()
                 
-            # Limpa a referência à animação
             self.ani = None
             self.is_plotting = False
             return True
         return False
+    
+    def debug_read_log(self):
+        """Função de debug para testar a leitura de logs."""
+        print(f"Lendo arquivo de log: {self.log_path}")
+        if not os.path.exists(self.log_path):
+            print("Arquivo de log não encontrado!")
+            return
+
+        self.read_log()
+        print(f"Tempos encontrados: {len(self.time_values)}")
+        if self.time_values:
+            print(f"Primeiro tempo: {self.time_values[0]}")
+            print(f"Último tempo: {self.time_values[-1]}")
+        
+        for field in self.fields:
+            residuals = [r for r in self.residuals[field] if r is not None]
+            if residuals:
+                print(f"{field}: {len(residuals)} pontos, primeiro: {residuals[0]}, último: {residuals[-1]}")

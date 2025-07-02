@@ -7,6 +7,7 @@ import psutil
 import numpy as np
 from datetime import datetime
 from matplotlib_residual_plotter import MatplotlibResidualPlotter
+from visualization import VisualizationWindow
 
 # Configuração para evitar o aviso QSocketNotifier
 import matplotlib
@@ -524,6 +525,11 @@ class OpenFOAMInterface(QWidget):
         self.reconstructButton.clicked.connect(self.reconstructPar)
         leftControlLayout.addWidget(self.reconstructButton)
         
+        self.visualizationButton = QPushButton("Visualizar", leftPanel)
+        self.visualizationButton.setStyleSheet(buttonStyle)
+        self.visualizationButton.clicked.connect(self.openVisualization)
+        leftControlLayout.addWidget(self.visualizationButton)
+        
         self.clearDecomposeButton = QPushButton("clearProcessors", leftPanel)
         self.clearDecomposeButton.setStyleSheet(buttonStyle)
         self.clearDecomposeButton.clicked.connect(self.clearDecomposedProcessors)
@@ -805,7 +811,7 @@ class OpenFOAMInterface(QWidget):
         current = self.graphWidget.getViewBox().getState()['logMode'][1]
         self.graphWidget.setLogMode(y=not current)
         scale_type = "logarithmic" if not current else "linear"
-        self.outputArea.append(f"{scale_type.capitalize()} scale activated", 2000)
+        self.outputArea.append(f"{scale_type.capitalize()} scale activated")
 
     def exportPlotData(self):
         """Exports the plot data to a CSV file."""
@@ -1174,14 +1180,34 @@ class OpenFOAMInterface(QWidget):
         self.setupProcessEnvironment(self.currentProcess)
         self.currentProcess.setWorkingDirectory(self.baseDir)
         
+        # Flag para indicar se a visualização deve ser aberta após a reconstrução
+        self.open_visualization_after_reconstruction = False
+        
         def finished(code):
-            self.outputArea.append(f"Reconstrução finalizada com código {code}", 5000)
+            self.outputArea.append(f"Reconstrução finalizada com código {code}")
             self.currentProcess = None
+            if code == 0 and self.open_visualization_after_reconstruction:
+                self.open_visualization_after_reconstruction = False
+                # Pequeno atraso para garantir que tudo esteja pronto
+                QTimer.singleShot(500, self.openVisualization)
         
         self.currentProcess.finished.connect(finished)
         self.connectProcessSignals(self.currentProcess)
         self.currentProcess.start(command)
-    
+
+    def onReconstructionFinished(self, exitCode, exitStatus):
+        """Callback para quando o processo de reconstrução termina."""
+        if exitStatus == QProcess.NormalExit and exitCode == 0:
+            self.outputArea.append("<b>Reconstrução concluída com sucesso.</b>")
+            self.statusBar.showMessage("Reconstrução bem-sucedida!", 5000)
+            QMessageBox.information(self, "Sucesso", "O caso foi reconstruído com sucesso.")
+        else:
+            error_msg = "Falha na reconstrução."
+            self.outputArea.append(f"<font color='red'><b>{error_msg}</b></font>")
+            self.statusBar.showMessage("Erro na reconstrução.", 5000)
+            QMessageBox.critical(self, "Erro", f"{error_msg}\nVerifique o terminal para mais detalhes.")
+        self.currentProcess = None
+
     def decomposePar(self):
         if not self.unvFilePath:
             self.outputArea.append("Error: No case selected.")
@@ -1452,8 +1478,9 @@ class OpenFOAMInterface(QWidget):
             self.outputArea.append("Nenhuma simulação em execução para parar.")
 
     def clearTerminal(self):
+        """Limpa o terminal de saída."""
         self.outputArea.clear()
-        self.outputArea.append("Terminal limpo.", 2000)
+        self.outputArea.append("Terminal limpo.")
     
     def editFile(self):
         """Abre um arquivo para edição no editor."""
@@ -1939,6 +1966,7 @@ class OpenFOAMInterface(QWidget):
     def set_base_dir(self):
         """Permite ao usuário definir o diretório base."""
         new_base_dir = QFileDialog.getExistingDirectory(
+           
             self, "Escolher Diretório Base", 
             self.baseDir, 
             QFileDialog.ShowDirsOnly
@@ -2012,6 +2040,70 @@ class OpenFOAMInterface(QWidget):
         
         event.accept()  
         
+    def check_vtk_installed(self):
+        """Verifica se o VTK está instalado e disponível."""
+        try:
+            import vtk
+            try:
+                from vtk.qt.QVTKRenderWindowInteractor import QVTKRenderWindowInteractor
+            except ImportError:
+                # Se não conseguir importar QVTKRenderWindowInteractor, tenta continuar apenas com o vtk
+                pass
+            self.outputArea.append("VTK encontrado.")
+            return True
+        except ImportError as e:
+            self.outputArea.append(f"Erro ao importar VTK: {str(e)}")
+            QMessageBox.warning(
+                self,
+                "VTK não encontrado",
+                "A biblioteca VTK não está instalada. A visualização 3D não estará disponível.\n\n"
+                "Para instalar o VTK, execute:\n"
+                "pip install vtk"            )
+            return False
+
+    def openVisualization(self):
+        """Abre uma nova janela para visualização do caso atual."""
+        if not self.baseDir or not os.path.isdir(self.baseDir):
+            self.outputArea.append("Erro: Nenhum caso selecionado ou diretório base inválido.")
+            return
+            
+        # Verificar se o VTK está instalado
+        if not self.check_vtk_installed():
+            return
+            
+        try:
+            # Verificar se a reconstrução já foi feita
+            time_dirs = [d for d in os.listdir(self.baseDir) if re.match(r'^\d+(\.\d+)?$', d)]
+            processor_dirs = [d for d in os.listdir(self.baseDir) if d.startswith('processor')]
+            
+            if not time_dirs and processor_dirs:
+                # Caso está decomposto mas não reconstruído
+                reply = QMessageBox.question(
+                    self, 
+                    'Reconstrução Necessária',
+                    'O caso está decomposto, mas não foi reconstruído. Deseja reconstruir agora?',
+                    QMessageBox.Yes | QMessageBox.No, 
+                    QMessageBox.Yes
+                )
+                
+                if reply == QMessageBox.Yes:
+                    # Ativar a flag para abrir a visualização após a reconstrução
+                    self.open_visualization_after_reconstruction = True
+                    self.reconstructPar()
+                    return  # A visualização será aberta após a reconstrução
+                else:
+                    self.outputArea.append("Visualização cancelada. É necessário reconstruir o caso primeiro.")
+                    return
+            
+            # Abrir a janela de visualização
+            self.visualization_window = VisualizationWindow(self.baseDir, self)
+            self.visualization_window.setAttribute(Qt.WA_DeleteOnClose, False)  # Evita que a janela seja fechada prematuramente
+            self.visualization_window.show()
+            self.outputArea.append("Janela de visualização aberta com sucesso.")
+            
+        except Exception as e:
+            self.outputArea.append(f"Erro ao abrir a visualização: {str(e)}")
+    
 class FluidProperties:
     def __init__(self):
         self.c0, self.c1, self.c2, self.c3 = (999.842594, 0.06793952, -0.00909529, 0.0001001685) # Example values
