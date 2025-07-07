@@ -1,0 +1,178 @@
+/*--------------------------------*- C++ -*----------------------------------*\
+  =========                 |
+  \\      /  F ield         | OpenFOAM: The Open Source CFD Toolbox
+   \\    /   O peration     | Website:  https://openfoam.org
+    \\  /    A nd           | Version:  12
+     \\/     M anipulation  |
+\*---------------------------------------------------------------------------*/
+FoamFile
+{
+    format      ascii;
+    class       dictionary;
+    location    "constant";
+    object      cloudProperties;  // Defines the particle cloud properties
+}
+// ************************************************************************* //
+
+type        MPPICCloud;  // Uses MPPIC method for dense particulate suspension
+
+
+solution
+{
+    coupled         true;
+    transient       yes;
+    cellValueSourceCorrection on;
+    maxCo           0.01;
+
+    interpolationSchemes
+    {
+        rho.water     cell;
+        U.water       cellPoint;
+        mu.water      cell;
+        alpha.water   cell;
+    }
+
+    averagingMethod dual; //Averaging over the cells and dual volumes, which results in a small gradient 				     basis to improve stability for packed volume fractions.
+
+    integrationSchemes
+    {
+        U 	Euler;
+    }
+
+    sourceTerms
+    {
+        schemes
+        {
+           U 	semiImplicit 1;
+        }
+    }
+}
+
+constantProperties
+{
+    rho0 1507;
+}
+
+subModels
+{
+    particleForces
+    {
+    	PlessisMasliyahDrag
+        {
+            alphac alpha.water;
+        }
+        gravity;       
+    }
+
+    injectionModels
+    {
+        model1
+        {
+            type            manualInjection;
+            positionsFile   "positions.dat";
+            parcelBasisType mass;
+            massTotal       0.00226;
+            U0              (0 0 0);
+
+            sizeDistribution
+            {
+                type 	fixedValue;
+                value 	4.53e-4;
+            }
+
+            uniformParcelSize nParticle;
+            SOI 0;
+        }
+    }
+
+    dispersionModel none;
+    heatTransferModel none;
+    surfaceFilmModel none;
+    isotropyModel none;
+    stochasticCollisionModel none;
+    radiation off;
+
+    patchInteractionModel localInteraction;
+    localInteractionCoeffs
+    {
+        patches
+        (
+            walls
+            {
+                type rebound;
+                e    0.1;
+                mu   0.3;
+            }
+            "outlet"
+            {
+                type escape;
+            }
+        );
+    }
+
+    packingModel explicit;
+
+    explicitCoeffs
+    {
+        particleStressModel
+	{
+	    type HarrisCrighton;
+	    alphaPacked 0.5;
+	    pSolid 10;
+	    beta 2;
+	    eps 1.0e-7;
+	}
+
+        correctionLimitingMethod
+        {
+            type absolute;
+            e 0.9;
+        }
+
+        /*alphaMax    0.6;//Esse parametros parecem ser Dummy
+        alphaMin    1e-4;
+        tolerance   1e-3;
+        maxIter     100;*/
+    }
+
+    implicitCoeffs
+    {
+        alphaMin 0.0001;
+        rhoMin 1.0;
+        applyLimiting true;
+        applyGravity false;
+        particleStressModel
+        {
+            type HarrisCrighton;
+            alphaPacked 0.58;
+            pSolid 5.0;
+            beta 2.0;
+            eps 1.0e-2;
+        }
+        
+    }
+
+    dampingModel none;
+    relaxationCoeffs
+    {
+        timeScaleModel
+        {
+            type nonEquilibrium;
+            alphaPacked 0.5;
+            e 0.9;
+        }
+    }
+}
+
+cloudFunctions
+{
+    volumeFraction1
+    {
+        type volumeFraction;  // Outputs local particle volume fraction field
+    }
+
+    massFlux1
+    {
+        type massFlux;        // Outputs particle mass flux field
+    }
+}

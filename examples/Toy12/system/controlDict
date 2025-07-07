@@ -1,0 +1,91 @@
+/*--------------------------------*- C++ -*----------------------------------*\
+  =========                 |
+  \\      /  F ield         | OpenFOAM: The Open Source CFD Toolbox
+   \\    /   O peration     | Website:  https://openfoam.org
+    \\  /    A nd           | Version:  12
+     \\/     M anipulation  |
+\*---------------------------------------------------------------------------*/
+FoamFile
+{
+    format      ascii;
+    class       dictionary;
+    location    "system";
+    object      controlDict;
+}
+// * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
+
+application     foamRun;
+
+solver          incompressibleDenseParticleFluid;
+
+//startFrom       latestTime;
+
+startTime       0;
+
+stopAt          endTime;
+
+endTime         1;
+
+deltaT          0.05;
+
+writeControl    adjustableRunTime;
+
+writeInterval   0.05;
+
+purgeWrite      0;
+
+writeFormat     ascii;
+
+writePrecision  6;
+
+writeCompression off;
+
+timeFormat      general;
+
+timePrecision   6;
+
+runTimeModifiable yes;
+
+adjustTimeStep  on;
+
+maxCo           0.1;
+maxAlphaCo      0.1;
+
+maxDeltaT       0.1;InfoSwitches
+{
+    time 1;
+}
+
+DebugSwitches
+{
+    Info                                   1;
+    Time                                   1;
+
+    // Solver-level debug
+    denseParticleCloud                     1;
+    denseParticle                          1;
+
+    // Debug for interaction forces and parcel tracking
+    particleForces                         1;
+    particleTracking                       1;
+
+    // Lagrangian submodels (e.g., collision models, drag)
+    pairCollisionModel                     1;
+    collisionModel                         1;
+    particleStressModel                    1;
+
+    // Fluid-particle coupling debug
+    kinematicCloudDebug                    1;
+    reactingCloudDebug                     0;  // geralmente não é usado, mas pode ajudar se tiver reações
+    thermoCloudDebug                       0;
+
+    // Numerical debug
+    PIMPLE                                 1;
+    fvSolution                             1;
+    fvSchemes                              1;
+
+    // IO and mesh
+    mesh                                   0;  // use 1 para debugar problemas de malha
+    IOobject                               0;  // útil se tiver problema com leitura de arquivos
+
+}

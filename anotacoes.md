@@ -1,0 +1,2 @@
+# Colocar o tempo da simulação ao longo dos frames do vídeo. Um pequeno texto vai ser inserido no vídeo informando o tempo em que cada frame está associado.
+# Pedir para o usuário o tamanho da foto de cada frame para fazer o vídeo, tipo (1080x720, etc)

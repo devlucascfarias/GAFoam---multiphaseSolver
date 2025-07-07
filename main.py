@@ -9,9 +9,8 @@ from datetime import datetime
 from matplotlib_residual_plotter import MatplotlibResidualPlotter
 from visualization import VisualizationWindow
 
-# Configuração para evitar o aviso QSocketNotifier
 import matplotlib
-matplotlib.use('Agg')  # Usa um backend que não requer GUI
+matplotlib.use('Agg')  
 
 from PyQt5.QtWidgets import (
     QApplication, QWidget, QComboBox, QWidgetAction, QPushButton,
@@ -29,7 +28,7 @@ from rate_calculator import calculate_increase_rate
 from simulation_history import SimulationHistory
 
 class OpenFOAMInterface(QWidget):
-    """Interface moderna para interação com o OpenFOAM MultiphaseEuler."""
+    """Classe principal da interface"""
     
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -53,9 +52,15 @@ class OpenFOAMInterface(QWidget):
         self.setupMainContentArea()
         self.setupStatusBar()
         
-        self.systemMonitorTimer = QTimer(self)
-        self.systemMonitorTimer.timeout.connect(self.updateSystemUsage)
-        self.systemMonitorTimer.start(2000)
+        # Initialize system monitoring with error handling
+        try:
+            self.lastTotal = 0
+            self.lastIdle = 0
+            self.systemMonitorTimer = QTimer(self)
+            self.systemMonitorTimer.timeout.connect(self.updateSystemUsage)
+            self.systemMonitorTimer.start(2000)
+        except Exception as e:
+            print(f"Error setting up system monitor timer: {e}")
         
         self.setLayout(self.mainVerticalLayout)
         
@@ -593,30 +598,30 @@ class OpenFOAMInterface(QWidget):
             }
         """
         
-        self.runButton = QPushButton("Iniciar", controlPanel)
+        self.runButton = QPushButton("Run", controlPanel)
         self.runButton.setStyleSheet(utilButtonStyle)
-        self.runButton.setToolTip("Iniciar Simulação")
+        self.runButton.setToolTip("Run Simuulation")
         self.runButton.clicked.connect(self.runSimulation)
         
-        self.pauseButton = QPushButton("Pausar", controlPanel)
+        self.pauseButton = QPushButton("Pause", controlPanel)
         self.pauseButton.setStyleSheet(utilButtonStyle)
-        self.pauseButton.setToolTip("Pausar Simulação")
+        self.pauseButton.setToolTip("Pause Simulation")
         self.pauseButton.clicked.connect(self.pauseSimulation)
         
-        self.resumeButton = QPushButton("Retomar", controlPanel)
+        self.resumeButton = QPushButton("Resume", controlPanel)
         self.resumeButton.setStyleSheet(utilButtonStyle)
-        self.resumeButton.setToolTip("Retomar Simulação")
+        self.resumeButton.setToolTip("Resume Simulation")
         self.resumeButton.clicked.connect(self.resumeSimulation)
         
-        self.restartButton = QPushButton("Reiniciar", controlPanel)
+        self.restartButton = QPushButton("Restart", controlPanel)
         self.restartButton.setStyleSheet(utilButtonStyle)
-        self.restartButton.setToolTip("Reiniciar Simulação")
+        self.restartButton.setToolTip("Restart Simulation")
         self.restartButton.clicked.connect(self.restartSimulation)
         self.restartButton.clicked.connect(self.clearResidualPlot)
         
-        self.stopButton = QPushButton("Parar", controlPanel)
+        self.stopButton = QPushButton("Stop", controlPanel)
         self.stopButton.setStyleSheet(utilButtonStyle)
-        self.stopButton.setToolTip("Parar Simulação")
+        self.stopButton.setToolTip("Stop Simulation")
         self.stopButton.clicked.connect(self.stopSimulation)
         
         controlPanelLayout.addWidget(self.runButton)
@@ -641,17 +646,17 @@ class OpenFOAMInterface(QWidget):
         
         self.openParaviewButton = QPushButton("ParaView", controlPanel)
         self.openParaviewButton.setStyleSheet(utilButtonStyle)
-        self.openParaviewButton.setToolTip("Abrir no ParaView")
+        self.openParaviewButton.setToolTip("Open in ParaView")
         self.openParaviewButton.clicked.connect(self.openParaview)
         
-        self.calculateRateButton = QPushButton("Calcular Δy", controlPanel)
+        self.calculateRateButton = QPushButton("Calculate Δy", controlPanel)
         self.calculateRateButton.setStyleSheet(utilButtonStyle)
-        self.calculateRateButton.setToolTip("Calcular taxa de crescimento")
+        self.calculateRateButton.setToolTip("Calculate growth rate")
         self.calculateRateButton.clicked.connect(self.openRateCalculationDialog)
         
-        self.fluidPropertiesButton = QPushButton("Propriedades", controlPanel)
+        self.fluidPropertiesButton = QPushButton("Calculate fluid properties", controlPanel)
         self.fluidPropertiesButton.setStyleSheet(utilButtonStyle)
-        self.fluidPropertiesButton.setToolTip("Calcular propriedades do fluido")
+        self.fluidPropertiesButton.setToolTip("Calculate fluid properties")
         self.fluidPropertiesButton.clicked.connect(self.openFluidPropertiesDialog)
         
         controlPanelLayout.addWidget(self.openParaviewButton)
@@ -881,6 +886,7 @@ class OpenFOAMInterface(QWidget):
         self.mainVerticalLayout.addWidget(self.statusBar)
     
     def updateSystemUsage(self):
+        # Update CPU usage
         try:
             with open('/proc/stat', 'r') as f:
                 lines = f.readlines()
@@ -900,17 +906,37 @@ class OpenFOAMInterface(QWidget):
                         
                         self.lastTotal = total
                         self.lastIdle = idle
-        except:
-            pass
+        except Exception as e:
+            print(f"Error updating CPU usage: {e}")
         
-        storage = QtCore.QStorageInfo(QtCore.QDir.rootPath())
-        memUsed = (storage.bytesTotal() - storage.bytesFree()) / (1024.0**3)
-        memTotal = storage.bytesTotal() / (1024.0**3)
-        memPercent = (memUsed / memTotal) * 100 if memTotal > 0 else 0
-        
-        self.memUsageLabel.setText(
-            f"Memory: {int(memPercent)}% ({memUsed:.1f}G/{memTotal:.1f}G)"
-        )
+        # Update memory usage - properly reading from /proc/meminfo instead of disk usage
+        try:
+            with open('/proc/meminfo', 'r') as f:
+                lines = f.readlines()
+                mem_info = {}
+                for line in lines:
+                    parts = line.split(':')
+                    if len(parts) >= 2:
+                        key = parts[0].strip()
+                        value = parts[1].strip().split()[0]  # remove 'kB' and get value
+                        mem_info[key] = int(value)
+                
+                if 'MemTotal' in mem_info and 'MemFree' in mem_info and 'Buffers' in mem_info and 'Cached' in mem_info:
+                    memTotal = mem_info['MemTotal'] / 1024.0  # Convert to MB
+                    memFree = mem_info['MemFree'] / 1024.0
+                    buffers = mem_info['Buffers'] / 1024.0
+                    cached = mem_info['Cached'] / 1024.0
+                    
+                    # Calculate used memory (accounting for buffers and cache)
+                    memUsed = memTotal - (memFree + buffers + cached)
+                    memPercent = (memUsed / memTotal) * 100 if memTotal > 0 else 0
+                    
+                    self.memUsageLabel.setText(
+                        f"Memory: {int(memPercent)}% ({memUsed/1024:.1f}G/{memTotal/1024:.1f}G)"
+                    )
+        except Exception as e:
+            print(f"Error updating memory usage: {e}")
+            self.memUsageLabel.setText("Memory: --% (-.--G/-.--G)")
     
     def populateTreeView(self, casePath=None):
         """Função removida pois a visualização de árvore foi descontinuada."""
@@ -1977,11 +2003,9 @@ class OpenFOAMInterface(QWidget):
             self.config["baseDir"] = self.baseDir
             self.save_config()
             
-            # Atualiza o caminho do log para o residualPlotter
             if hasattr(self, 'residualPlotter'):
                 self.residualPlotter.log_path = os.path.join(self.baseDir, "log.foamRun")
                 self.residualPlotter.clear_plot()
-                # Garantimos que a animação esteja parada
                 self.residualPlotter.stop_plotting()
                 
             self.outputArea.append(f"Diretório base configurado para: {self.baseDir}")
@@ -2047,7 +2071,6 @@ class OpenFOAMInterface(QWidget):
             try:
                 from vtk.qt.QVTKRenderWindowInteractor import QVTKRenderWindowInteractor
             except ImportError:
-                # Se não conseguir importar QVTKRenderWindowInteractor, tenta continuar apenas com o vtk
                 pass
             self.outputArea.append("VTK encontrado.")
             return True
@@ -2067,17 +2090,14 @@ class OpenFOAMInterface(QWidget):
             self.outputArea.append("Erro: Nenhum caso selecionado ou diretório base inválido.")
             return
             
-        # Verificar se o VTK está instalado
         if not self.check_vtk_installed():
             return
             
         try:
-            # Verificar se a reconstrução já foi feita
             time_dirs = [d for d in os.listdir(self.baseDir) if re.match(r'^\d+(\.\d+)?$', d)]
             processor_dirs = [d for d in os.listdir(self.baseDir) if d.startswith('processor')]
             
             if not time_dirs and processor_dirs:
-                # Caso está decomposto mas não reconstruído
                 reply = QMessageBox.question(
                     self, 
                     'Reconstrução Necessária',
@@ -2087,17 +2107,15 @@ class OpenFOAMInterface(QWidget):
                 )
                 
                 if reply == QMessageBox.Yes:
-                    # Ativar a flag para abrir a visualização após a reconstrução
                     self.open_visualization_after_reconstruction = True
                     self.reconstructPar()
-                    return  # A visualização será aberta após a reconstrução
                 else:
                     self.outputArea.append("Visualização cancelada. É necessário reconstruir o caso primeiro.")
                     return
             
             # Abrir a janela de visualização
             self.visualization_window = VisualizationWindow(self.baseDir, self)
-            self.visualization_window.setAttribute(Qt.WA_DeleteOnClose, False)  # Evita que a janela seja fechada prematuramente
+            self.visualization_window.setAttribute(Qt.WA_DeleteOnClose, False)  
             self.visualization_window.show()
             self.outputArea.append("Janela de visualização aberta com sucesso.")
             
@@ -2178,10 +2196,31 @@ def openFileEditor(self):
     self.fileEditorWindow.show()
 
 if __name__ == "__main__":
-    app = QApplication(sys.argv)
-    app.setStyle("Fusion")
+    import signal
     
-    interface = OpenFOAMInterface()
-    interface.show()
+    # Set up signal handler for graceful termination
+    def signal_handler(sig, frame):
+        print("\nReceived interrupt signal. Shutting down gracefully...")
+        QApplication.quit()
     
-    sys.exit(app.exec_())
+    # Register signal handlers
+    signal.signal(signal.SIGINT, signal_handler)
+    
+    try:
+        app = QApplication(sys.argv)
+        app.setStyle("Fusion")
+        
+        interface = OpenFOAMInterface()
+        interface.show()
+        
+        sys.exit(app.exec_())
+    except KeyboardInterrupt:
+        print("\nKeyboard interrupt received. Shutting down gracefully...")
+    except Exception as e:
+        print(f"Error in main application: {e}")
+        import traceback
+        traceback.print_exc()
+    finally:
+        # Make sure we exit cleanly
+        if 'app' in locals():
+            app.quit()

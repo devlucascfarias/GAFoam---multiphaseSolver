@@ -1,0 +1,37 @@
+/*--------------------------------*- C++ -*----------------------------------*\
+  =========                 |
+  \\      /  F ield         | OpenFOAM: The Open Source CFD Toolbox
+   \\    /   O peration     | Website:  https://openfoam.org
+    \\  /    A nd           | Version:  12
+     \\/     M anipulation  |
+\*---------------------------------------------------------------------------*/
+FoamFile
+{
+    format      ascii;
+    class       dictionary;
+    location    "constant";
+    object      momentumTransport.water;
+}
+// * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
+
+simulationType  RAS;
+
+RAS
+{
+    model           kEpsilon;
+    turbulence      on;
+    printCoeffs     on;
+
+    // Coeficientes do modelo k-Epsilon baseados no artigo
+    // Fonte: Huai et al., 2013, Water Science and Engineering, 6(1), p. 81 
+    kEpsilonCoeffs
+    {
+        Cmu         0.09;    // 
+        C1          1.44;    // 
+        C2          1.92;    // 
+        sigmak      1.0;     // 
+        sigmaEps    1.3;     // 
+    }
+}
+
+// ************************************************************************* //
